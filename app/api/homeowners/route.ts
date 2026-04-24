@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { name, phone, address, zipCode, photoUrls } = body
+  const { name, address, zipCode, photoUrls } = body
+  const phone = normalizePhone(body.phone)
 
   const service = await createServiceClient()
 
@@ -61,4 +62,11 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ id: homeowner.id })
+}
+
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return raw
 }
