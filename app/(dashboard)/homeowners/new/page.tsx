@@ -48,13 +48,18 @@ export default function NewHomeownerPage() {
       body: JSON.stringify({ ...form, photoUrls }),
     })
 
+    const data = await res.json()
     if (!res.ok) {
-      const { error: msg } = await res.json()
-      setError(msg ?? 'Something went wrong')
+      setError(data.error ?? 'Something went wrong')
       setLoading(false)
     } else {
-      router.push('/homeowners')
-      router.refresh()
+      if (data.smsError) {
+        setError(`Homeowner added but SMS failed: ${data.smsError}`)
+        setLoading(false)
+      } else {
+        router.push('/homeowners')
+        router.refresh()
+      }
     }
   }
 

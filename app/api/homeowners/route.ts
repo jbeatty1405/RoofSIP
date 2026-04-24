@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
 
   const optInMsg = `Hi ${firstName}! ${pmName}${company} added you to receive free storm alerts for your roof. When storm activity hits your area, we'll send a heads up and offer a free inspection. Reply YES to opt in or STOP to skip.`
 
+  let smsError: string | null = null
   try {
     const twilio = getTwilioClient()
     await twilio.messages.create({
@@ -57,11 +58,12 @@ export async function POST(request: NextRequest) {
       direction: 'outbound',
       status: 'sent',
     })
-  } catch (err) {
-    console.error('Opt-in SMS failed:', err)
+  } catch (err: any) {
+    smsError = err?.message ?? String(err)
+    console.error('Opt-in SMS failed:', smsError)
   }
 
-  return NextResponse.json({ id: homeowner.id })
+  return NextResponse.json({ id: homeowner.id, smsError })
 }
 
 function normalizePhone(raw: string): string {
