@@ -35,7 +35,7 @@ export default function MessageStyleForm({ userId, initial }: { userId: string; 
         onChange={e => setValue(e.target.value)}
         rows={4}
         placeholder="e.g. Friendly and casual — like a neighbor checking in. Keep it short and genuine, don't sound like a sales pitch."
-        className="w-full border border-zinc-300 rounded-lg px-3 py-2.5 text-sm text-zinc-900 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"
+        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-sky-500"
       />
 
       <div className="flex flex-col gap-1.5">
@@ -55,11 +55,11 @@ export default function MessageStyleForm({ userId, initial }: { userId: string; 
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 bg-zinc-900 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors"
         >
           {saving ? 'Saving…' : 'Save style'}
         </button>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
+        {saved && <span className="text-sm text-green-400">Saved</span>}
       </div>
     </div>
   )

@@ -17,13 +17,13 @@ export default async function MarketsPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Markets</h1>
+          <h1 className="text-2xl font-bold text-white">Markets</h1>
           <p className="text-sm text-zinc-500 mt-1">Group ZIP codes into markets and control scheduling per area.</p>
         </div>
-        <Link
-          href="/markets/new"
-          className="bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors"
-        >
+        <Link href="/markets/new" className="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
           Add market
         </Link>
       </div>
@@ -31,13 +31,13 @@ export default async function MarketsPage() {
       {markets && markets.length > 0 ? (
         <div className="flex flex-col gap-4">
           {markets.map((m: any) => (
-            <div key={m.id} className="bg-white rounded-xl border border-zinc-200 p-5">
+            <div key={m.id} className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <div className="flex items-center gap-3 mb-1">
-                    <h2 className="font-semibold text-zinc-900">{m.name}</h2>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${m.auto_schedule ? 'bg-green-50 text-green-700' : 'bg-zinc-100 text-zinc-600'}`}>
-                      {m.auto_schedule ? 'Auto-schedule on' : 'Manual scheduling'}
+                    <h2 className="font-semibold text-white">{m.name}</h2>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.auto_schedule ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                      {m.auto_schedule ? 'Auto-schedule' : 'Manual'}
                     </span>
                   </div>
                   <p className="text-sm text-zinc-500">
@@ -45,27 +45,29 @@ export default async function MarketsPage() {
                   </p>
                   <div className="flex gap-1.5 mt-3 flex-wrap">
                     {m.market_zips?.map((z: any) => (
-                      <span key={z.zip_code} className="text-xs bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
+                      <span key={z.zip_code} className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
                         {z.zip_code}
                       </span>
                     ))}
                   </div>
                 </div>
-                <Link href={`/markets/${m.id}`} className="text-sm text-zinc-500 hover:text-zinc-900 underline shrink-0 ml-4">
-                  Edit
+                <Link href={`/markets/${m.id}`} className="text-sm text-zinc-600 hover:text-zinc-200 font-medium transition-colors shrink-0 ml-4">
+                  Edit →
                 </Link>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-zinc-200 p-12 text-center">
-          <p className="text-zinc-500 text-sm">No markets yet.</p>
-          <p className="text-zinc-400 text-xs mt-1 mb-4">Add markets to control scheduling by area.</p>
-          <Link
-            href="/markets/new"
-            className="inline-block bg-zinc-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors"
-          >
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-16 text-center">
+          <div className="w-14 h-14 bg-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            </svg>
+          </div>
+          <p className="text-zinc-200 font-semibold text-sm">No markets yet</p>
+          <p className="text-zinc-600 text-xs mt-1 mb-5">Add markets to control scheduling by area.</p>
+          <Link href="/markets/new" className="inline-flex items-center gap-2 bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
             Add your first market
           </Link>
         </div>

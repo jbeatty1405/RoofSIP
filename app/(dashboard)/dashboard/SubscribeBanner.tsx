@@ -20,8 +20,8 @@ export default function SubscribeBanner({ userId, stripeCustomerId }: { userId: 
   }
 
   return (
-    <div className="flex items-center justify-between bg-sky-50 border border-sky-200 rounded-xl px-5 py-3 mb-6">
-      <p className="text-sm text-sky-800">
+    <div className="flex items-center justify-between bg-sky-500/10 border border-sky-500/20 rounded-xl px-5 py-3 mb-6">
+      <p className="text-sm text-sky-300">
         <span className="font-semibold">Start your 60-day free trial</span> — activate to enable automatic storm alerts and SMS.
       </p>
       <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -32,7 +32,7 @@ export default function SubscribeBanner({ userId, stripeCustomerId }: { userId: 
         >
           {loading ? 'Loading...' : 'Start free trial'}
         </button>
-        <button onClick={() => setDismissed(true)} className="text-sky-400 hover:text-sky-600 text-lg leading-none">
+        <button onClick={() => setDismissed(true)} className="text-sky-600 hover:text-sky-400 text-lg leading-none">
           ×
         </button>
       </div>

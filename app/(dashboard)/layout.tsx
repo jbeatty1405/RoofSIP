@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Logo from '@/app/_components/Logo'
 import NotificationBell from '@/app/_components/NotificationBell'
 import SignOutButton from '@/app/_components/SignOutButton'
-import MobileNav from '@/app/_components/MobileNav'
+import MobileDrawer from '@/app/_components/MobileDrawer'
 import NavLink from '@/app/_components/NavLink'
 
 const NAV = [
@@ -86,10 +86,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const unread = unreadCount ?? 0
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex">
+    <div className="min-h-screen bg-zinc-950 flex">
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-60 bg-white border-r border-zinc-200 flex-col">
-        <div className="px-5 py-5 border-b border-zinc-100 flex items-center justify-between">
+      <aside className="hidden md:flex w-60 bg-zinc-900 border-r border-zinc-800 flex-col">
+        <div className="px-5 py-5 border-b border-zinc-800 flex items-center justify-between">
           <Logo size="md" />
           <NotificationBell count={unread} />
         </div>
@@ -104,8 +104,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
             />
           ))}
         </nav>
-        <div className="p-3 border-t border-zinc-100">
-          <p className="text-xs text-zinc-400 px-3 mb-2 truncate">{user.email}</p>
+        <div className="p-3 border-t border-zinc-800">
+          <p className="text-xs text-zinc-600 px-3 mb-2 truncate">{user.email}</p>
           <SignOutButton />
         </div>
       </aside>
@@ -113,15 +113,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-zinc-200">
+        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-zinc-900 border-b border-zinc-800">
+          <MobileDrawer unread={unread} email={user.email ?? ''} />
           <Logo size="sm" />
           <NotificationBell count={unread} />
         </header>
 
-        <main className="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-auto">{children}</main>
-
-        {/* Mobile bottom nav */}
-        <MobileNav unread={unread} />
+        <main className="flex-1 p-4 md:p-8 overflow-auto">{children}</main>
       </div>
     </div>
   )

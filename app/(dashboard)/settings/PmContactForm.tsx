@@ -39,7 +39,7 @@ export default function PmContactForm({
           value={phone}
           onChange={e => setPhone(e.target.value)}
           placeholder="+1 (555) 000-0000"
-          className="w-full border border-zinc-300 rounded-lg px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
       </div>
       <div className="flex flex-col gap-2">
@@ -49,18 +49,18 @@ export default function PmContactForm({
           value={email}
           onChange={e => setEmail(e.target.value)}
           placeholder="you@example.com"
-          className="w-full border border-zinc-300 rounded-lg px-3 py-2.5 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500"
         />
       </div>
       <div className="flex items-center gap-3">
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 bg-zinc-900 text-white text-sm font-medium rounded-lg hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+          className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white text-sm font-medium rounded-lg disabled:opacity-50 transition-colors"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
-        {saved && <span className="text-sm text-green-600">Saved</span>}
+        {saved && <span className="text-sm text-green-400">Saved</span>}
       </div>
     </div>
   )
