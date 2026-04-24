@@ -46,6 +46,8 @@ export default function StormMap({ homeowners }: { homeowners: Homeowner[] }) {
       const L = (await import('leaflet')).default
       await import('leaflet/dist/leaflet.css')
 
+      if ((mapRef.current as any)._leaflet_id) return
+
       const map = L.map(mapRef.current!, {
         center: [37.5, -96],
         zoom: 5,
@@ -153,6 +155,13 @@ export default function StormMap({ homeowners }: { homeowners: Homeowner[] }) {
     }
 
     init()
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove()
+        mapInstanceRef.current = null
+      }
+    }
   }, [homeowners])
 
   return (
