@@ -1,6 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import SubscribeBanner from './SubscribeBanner'
-import OnboardingChecklist from '@/app/_components/OnboardingChecklist'
+import HaileyBanner from './HaileyBanner'
 import Link from 'next/link'
 
 export default async function DashboardHome() {
@@ -12,16 +12,6 @@ export default async function DashboardHome() {
     .select('pm_name, company_name, stripe_customer_id, subscription_status, google_access_token')
     .eq('id', user!.id)
     .single()
-
-  const { count: templateCount } = await supabase
-    .from('sms_templates')
-    .select('*', { count: 'exact', head: true })
-    .eq('roofer_id', user!.id)
-
-  const { count: marketCount } = await supabase
-    .from('markets')
-    .select('*', { count: 'exact', head: true })
-    .eq('roofer_id', user!.id)
 
   const { count: homeownerCount } = await supabase
     .from('homeowners')
@@ -52,23 +42,35 @@ export default async function DashboardHome() {
     .gte('scheduled_at', new Date().toISOString())
     .limit(5)
 
-  const isTrial = profile?.subscription_status !== 'active'
+  const { data: lastSms } = await supabase
+    .from('sms_logs')
+    .select('created_at')
+    .eq('roofer_id', user!.id)
+    .eq('direction', 'outbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  const onboardingSteps = [
-    { label: 'Add your first homeowner', description: 'Start building your customer database.', href: '/homeowners/new', done: (homeownerCount ?? 0) > 0 },
-    { label: 'Create a market', description: 'Group ZIP codes and set scheduling rules per area.', href: '/markets/new', done: (marketCount ?? 0) > 0 },
-    { label: 'Set up message templates', description: 'Customize the SMS your homeowners receive after a storm.', href: '/templates', done: (templateCount ?? 0) > 0 },
-    { label: 'Connect Google Calendar', description: 'Auto-book inspections directly to your calendar.', href: '/settings', done: !!profile?.google_access_token },
-    { label: 'Activate your subscription', description: 'Start your 60-day free trial to enable storm alerts.', href: '/settings', done: !isTrial },
-  ]
+  const isTrial = profile?.subscription_status !== 'active'
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
+  let recentActivity: string | undefined
+  if (lastSms?.created_at) {
+    const days = Math.floor((Date.now() - new Date(lastSms.created_at).getTime()) / 86400000)
+    recentActivity = days === 0
+      ? 'Last alert sent today.'
+      : days === 1
+      ? 'Last alert sent yesterday.'
+      : `Last alert sent ${days} days ago.`
+  }
+
   return (
     <div>
-      <OnboardingChecklist steps={onboardingSteps} />
       {isTrial && <SubscribeBanner userId={user!.id} stripeCustomerId={profile?.stripe_customer_id} />}
+
+      <HaileyBanner pmName={profile?.pm_name} recentActivity={recentActivity} />
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">
