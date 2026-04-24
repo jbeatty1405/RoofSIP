@@ -4,6 +4,7 @@ import ConnectGoogleButton from './ConnectGoogleButton'
 import ManageBillingButton from './ManageBillingButton'
 import MessageStyleForm from './MessageStyleForm'
 import SignOutButton from '@/app/_components/SignOutButton'
+import PmContactForm from './PmContactForm'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const params = await searchParams
@@ -47,6 +48,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <dd className="text-sm text-zinc-900 mt-1">{profile?.company_name || '—'}</dd>
             </div>
           </dl>
+        </div>
+
+        <div className="bg-white rounded-xl border border-zinc-200 p-5">
+          <h2 className="font-semibold text-zinc-900 mb-1">Your contact info</h2>
+          <p className="text-xs text-zinc-400 mb-4">How we reach you when a homeowner books an inspection.</p>
+          <PmContactForm
+            userId={user!.id}
+            initialPhone={profile?.pm_phone ?? null}
+            initialEmail={profile?.pm_email ?? null}
+          />
         </div>
 
         <div className="bg-white rounded-xl border border-zinc-200 p-5">
