@@ -3,6 +3,7 @@ import { getGoogleAuthUrl } from '@/app/_lib/google'
 import ConnectGoogleButton from './ConnectGoogleButton'
 import ManageBillingButton from './ManageBillingButton'
 import MessageStyleForm from './MessageStyleForm'
+import SignOutButton from '@/app/_components/SignOutButton'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const params = await searchParams
@@ -85,6 +86,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             )}
           </div>
         </div>
+      </div>
+
+      <div className="mt-6 md:hidden">
+        <SignOutButton />
       </div>
     </div>
   )
