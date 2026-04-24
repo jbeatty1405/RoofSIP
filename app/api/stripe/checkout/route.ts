@@ -2,6 +2,8 @@ import { createClient } from '@/app/_lib/supabase/server'
 import { stripe, createCheckoutSession } from '@/app/_lib/stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
