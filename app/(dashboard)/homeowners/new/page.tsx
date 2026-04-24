@@ -7,13 +7,13 @@ import Link from 'next/link'
 
 export default function NewHomeownerPage() {
   const router = useRouter()
-  const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '', tcpaConsent: false })
+  const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  function set(field: string, value: string | boolean) {
+  function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
   }
 
@@ -25,7 +25,6 @@ export default function NewHomeownerPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.tcpaConsent) { setError('You must confirm TCPA consent before adding this homeowner.'); return }
     setLoading(true)
     setError('')
 
@@ -43,19 +42,20 @@ export default function NewHomeownerPage() {
       }
     }
 
-    const { error } = await supabase.from('homeowners').insert({
-      roofer_id: user!.id,
-      name: form.name,
-      phone: form.phone,
-      address: form.address,
-      zip_code: form.zipCode,
-      tcpa_consent: true,
-      tcpa_consent_at: new Date().toISOString(),
-      roof_photos: photoUrls,
+    const res = await fetch('/api/homeowners', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, photoUrls }),
     })
 
-    if (error) { setError(error.message); setLoading(false) }
-    else { router.push('/homeowners'); router.refresh() }
+    if (!res.ok) {
+      const { error: msg } = await res.json()
+      setError(msg ?? 'Something went wrong')
+      setLoading(false)
+    } else {
+      router.push('/homeowners')
+      router.refresh()
+    }
   }
 
   const inputClass = "w-full px-3.5 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent"
@@ -65,7 +65,8 @@ export default function NewHomeownerPage() {
       <div className="mb-6">
         <Link href="/homeowners" className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">← Homeowners</Link>
       </div>
-      <h1 className="text-2xl font-bold text-white mb-8">Add homeowner</h1>
+      <h1 className="text-2xl font-bold text-white mb-2">Add homeowner</h1>
+      <p className="text-sm text-zinc-500 mb-8">We'll text them to confirm they want storm alerts — no checkbox needed.</p>
 
       <form onSubmit={handleSubmit} className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 flex flex-col gap-5">
         <div>
@@ -103,19 +104,10 @@ export default function NewHomeownerPage() {
           )}
         </div>
 
-        <div className="border border-zinc-700 rounded-lg p-4">
-          <label className="flex gap-3 cursor-pointer items-start">
-            <input type="checkbox" checked={form.tcpaConsent} onChange={e => set('tcpaConsent', e.target.checked)} className="mt-0.5 shrink-0 accent-sky-500" />
-            <span className="text-sm text-zinc-400">
-              I confirm this homeowner has provided written consent to receive text messages about their roof and weather-related inspections.
-            </span>
-          </label>
-        </div>
-
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3.5 py-2.5 text-sm text-red-400">{error}</div>}
 
         <button type="submit" disabled={loading} className="w-full bg-sky-500 hover:bg-sky-600 text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
-          {loading ? 'Saving...' : 'Add homeowner'}
+          {loading ? 'Adding...' : 'Add homeowner'}
         </button>
       </form>
     </div>

@@ -122,6 +122,43 @@ export async function POST(request: NextRequest) {
     status: 'received',
   })
 
+  // Handle opt-in flow (homeowner hasn't consented yet)
+  if (!homeowner.tcpa_consent) {
+    const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
+    const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
+
+    if (isOptIn) {
+      await supabase
+        .from('homeowners')
+        .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString() })
+        .eq('id', homeowner.id)
+
+      const msg = `You're in! We'll text you a heads up whenever there's storm activity near your home, along with an offer for a free roof inspection. Reply STOP anytime to opt out.`
+      await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+      await supabase.from('sms_logs').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        message: msg,
+        direction: 'outbound',
+        status: 'sent',
+      })
+    } else if (isOptOut) {
+      const msg = `Got it — we won't reach out again. Have a great day!`
+      await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+    }
+
+    return new NextResponse('', { status: 200 })
+  }
+
+  // Handle STOP from consented homeowners
+  if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
+    await supabase
+      .from('homeowners')
+      .update({ tcpa_consent: false })
+      .eq('id', homeowner.id)
+    return new NextResponse('', { status: 200 })
+  }
+
   if (messageLower !== 'yes' && messageLower !== 'y') {
     return new NextResponse('', { status: 200 })
   }
