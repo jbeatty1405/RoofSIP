@@ -2,6 +2,7 @@ import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getAlertsForZip } from '@/app/_lib/noaa'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
+import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
@@ -28,8 +29,48 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  if (isQuietHours()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
+
   const supabase = await createServiceClient()
   const twilio = getTwilioClient()
+
+  // Send opt-in texts to homeowners added during quiet hours who haven't been texted yet
+  const { data: uncontacted } = await supabase
+    .from('homeowners')
+    .select('*, profiles(pm_name, company_name)')
+    .eq('tcpa_consent', false)
+
+  if (uncontacted?.length) {
+    const { data: existingLogs } = await supabase
+      .from('sms_logs')
+      .select('homeowner_id')
+      .in('homeowner_id', uncontacted.map((h: any) => h.id))
+      .eq('direction', 'outbound')
+
+    const alreadySentIds = new Set(existingLogs?.map((l: any) => l.homeowner_id))
+
+    for (const h of uncontacted as any[]) {
+      if (alreadySentIds.has(h.id)) continue
+      const profile = h.profiles
+      if (!profile) continue
+      const firstName = h.name.split(' ')[0]
+      const pmName = profile.pm_name ?? 'Your contractor'
+      const company = profile.company_name ? ` from ${profile.company_name}` : ''
+      const msg = `Hi ${firstName}! ${pmName}${company} added you to receive free storm alerts for your roof. When storm activity hits your area, we'll send a heads up and offer a free inspection. Reply YES to opt in or STOP to skip.`
+      try {
+        await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
+        await supabase.from('sms_logs').insert({
+          roofer_id: h.roofer_id,
+          homeowner_id: h.id,
+          message: msg,
+          direction: 'outbound',
+          status: 'sent',
+        })
+      } catch (err) {
+        console.error(`Deferred opt-in SMS failed to ${h.phone}:`, err)
+      }
+    }
+  }
 
   const { data: homeowners } = await supabase
     .from('homeowners')

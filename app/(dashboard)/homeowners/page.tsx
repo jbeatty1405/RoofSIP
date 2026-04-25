@@ -22,7 +22,8 @@ function Initials({ name }: { name: string }) {
   )
 }
 
-export default async function HomeownersPage() {
+export default async function HomeownersPage({ searchParams }: { searchParams: Promise<{ deferred?: string }> }) {
+  const params = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -34,6 +35,12 @@ export default async function HomeownersPage() {
 
   return (
     <div>
+      {params.deferred && (
+        <div className="mb-6 bg-sky-500/10 border border-sky-500/30 rounded-lg px-4 py-3 text-sm text-sky-400">
+          Homeowner added — it's outside sending hours, so their opt-in text will go out automatically this morning.
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Homeowners</h1>

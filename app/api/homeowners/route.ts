@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient } from '@/app/_lib/twilio'
+import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -42,6 +43,10 @@ export async function POST(request: NextRequest) {
   const company = profile?.company_name ? ` from ${profile.company_name}` : ''
 
   const optInMsg = `Hi ${firstName}! ${pmName}${company} added you to receive free storm alerts for your roof. When storm activity hits your area, we'll send a heads up and offer a free inspection. Reply YES to opt in or STOP to skip.`
+
+  if (isQuietHours()) {
+    return NextResponse.json({ id: homeowner.id, deferred: true })
+  }
 
   let smsError: string | null = null
   try {

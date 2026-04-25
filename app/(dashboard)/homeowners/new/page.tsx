@@ -52,14 +52,12 @@ export default function NewHomeownerPage() {
     if (!res.ok) {
       setError(data.error ?? 'Something went wrong')
       setLoading(false)
+    } else if (data.smsError) {
+      setError(`Homeowner added but SMS failed: ${data.smsError}`)
+      setLoading(false)
     } else {
-      if (data.smsError) {
-        setError(`Homeowner added but SMS failed: ${data.smsError}`)
-        setLoading(false)
-      } else {
-        router.push('/homeowners')
-        router.refresh()
-      }
+      router.push(data.deferred ? '/homeowners?deferred=1' : '/homeowners')
+      router.refresh()
     }
   }
 
