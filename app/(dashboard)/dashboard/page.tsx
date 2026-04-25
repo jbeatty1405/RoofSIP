@@ -70,7 +70,7 @@ export default async function DashboardHome() {
     <div>
       {isTrial && <SubscribeBanner userId={user!.id} stripeCustomerId={profile?.stripe_customer_id} />}
 
-      <HaileyBanner pmName={profile?.pm_name} recentActivity={recentActivity} />
+      <HaileyBanner recentActivity={recentActivity} />
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">

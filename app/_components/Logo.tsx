@@ -12,7 +12,7 @@ export default function Logo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
         <path d="M2 16L16 4L30 16" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
         <path d="M6 13.5V26C6 26.5523 6.44772 27 7 27H13V20H19V27H25C25.5523 27 26 26.5523 26 26V13.5" stroke="#0ea5e9" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
-      <span className={`font-bold tracking-tight text-zinc-900 ${s.text}`}>
+      <span className={`font-bold tracking-tight text-white ${s.text}`}>
         Roof<span className="text-sky-500">SIP</span>
       </span>
     </div>

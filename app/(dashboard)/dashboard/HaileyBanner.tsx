@@ -1,42 +1,57 @@
-export default function HaileyBanner({ pmName, recentActivity }: { pmName?: string | null; recentActivity?: string }) {
+export default function HaileyBanner({ recentActivity }: { recentActivity?: string }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 mb-8" style={{ minHeight: 300 }}>
-      {/* Hailey image — faded in from the right */}
+    <div
+      className="relative overflow-hidden rounded-2xl mb-8"
+      style={{
+        minHeight: 380,
+        background: '#0f1117',
+        border: '1.5px solid rgba(14,165,233,0.45)',
+        boxShadow: '0 0 32px rgba(14,165,233,0.18), 0 0 80px rgba(14,165,233,0.08), inset 0 0 40px rgba(14,165,233,0.04)',
+      }}
+    >
+      {/* Hailey image — right side, tall */}
       <div
-        className="absolute inset-y-0 right-0 w-80 md:w-[480px]"
+        className="absolute inset-y-0 right-0 w-72 md:w-[500px]"
         style={{
           backgroundImage: 'url(/hailey.webp)',
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
         }}
       >
-        {/* Gradient fade left */}
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, #18181b 0%, #18181b 5%, rgba(24,24,27,0.6) 45%, transparent 70%)' }} />
-        {/* Gradient fade bottom */}
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #18181b 0%, transparent 30%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to right, #0f1117 0%, #0f1117 8%, rgba(15,17,23,0.5) 40%, transparent 65%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, #0f1117 0%, transparent 25%)' }} />
       </div>
 
-      {/* Subtle blue glow behind text */}
-      <div className="absolute left-0 top-0 bottom-0 w-64 opacity-20" style={{ background: 'radial-gradient(ellipse at left center, #0ea5e9, transparent 70%)' }} />
+      {/* Blue atmospheric glow behind text */}
+      <div className="absolute left-0 top-0 bottom-0 w-80 opacity-25" style={{ background: 'radial-gradient(ellipse at left center, #0284c7, transparent 70%)' }} />
 
-      {/* Content */}
-      <div className="relative z-10 px-8 py-8 max-w-md flex flex-col justify-center h-full" style={{ minHeight: 300 }}>
-        <div className="flex items-center gap-2 mb-4">
-          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-sm shadow-sky-400" />
-          <span className="text-xs text-sky-400 font-semibold tracking-widest uppercase">Active</span>
+      {/* Content — vertically centered */}
+      <div className="relative z-10 flex flex-col justify-center h-full px-8 md:px-12 py-10" style={{ minHeight: 380, maxWidth: 480 }}>
+        <div className="flex items-center gap-2.5 mb-5">
+          <span className="w-2 h-2 rounded-full bg-sky-400 shadow-lg" style={{ boxShadow: '0 0 8px #38bdf8' }} />
+          <span className="text-xs font-bold text-sky-400 tracking-widest uppercase">Active · Monitoring</span>
         </div>
 
-        <p className="text-xs font-semibold text-zinc-500 tracking-widest uppercase mb-1">Meet your assistant</p>
-        <h2 className="text-4xl font-bold text-white mb-3 tracking-tight" style={{ textShadow: '0 0 40px rgba(14,165,233,0.3)' }}>
+        <p className="text-xs font-semibold text-zinc-500 tracking-widest uppercase mb-2">Meet your assistant</p>
+
+        <h2
+          className="font-black text-white mb-4 leading-none"
+          style={{
+            fontSize: 'clamp(3rem, 6vw, 5rem)',
+            textShadow: '0 0 60px rgba(14,165,233,0.4), 0 2px 20px rgba(0,0,0,0.8)',
+            letterSpacing: '-0.02em',
+          }}
+        >
           Hailey
         </h2>
-        <p className="text-sm text-zinc-400 leading-relaxed mb-5 max-w-xs">
-          Hailey monitors storms, reaches out to your homeowners automatically, and handles inspection scheduling — so you show up to jobs, not phones.
+
+        <p className="text-base text-zinc-300 leading-relaxed mb-6" style={{ maxWidth: 340 }}>
+          Your AI storm assistant. She monitors weather, reaches out to homeowners, and handles scheduling — so you show up to jobs, not phones.
         </p>
 
-        <div className="flex items-center gap-2">
-          <div className="w-1 h-1 rounded-full bg-zinc-600" />
-          <p className="text-xs text-zinc-600">
+        <div className="flex items-center gap-2.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-zinc-700" />
+          <p className="text-xs text-zinc-500">
             {recentActivity ?? 'Monitoring storm activity across your markets.'}
           </p>
         </div>
