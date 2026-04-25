@@ -18,6 +18,12 @@ export default async function DashboardHome() {
     .select('*', { count: 'exact', head: true })
     .eq('roofer_id', user!.id)
 
+  const { count: optedInCount } = await supabase
+    .from('homeowners')
+    .select('*', { count: 'exact', head: true })
+    .eq('roofer_id', user!.id)
+    .eq('tcpa_consent', true)
+
   const monthStart = new Date()
   monthStart.setDate(1)
   monthStart.setHours(0, 0, 0, 0)
@@ -79,7 +85,7 @@ export default async function DashboardHome() {
         {profile?.company_name && <p className="text-zinc-500 text-sm mt-1">{profile.company_name}</p>}
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <Link href="/homeowners" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-sky-800 hover:shadow-lg hover:shadow-sky-950/50 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-zinc-500">Homeowners</p>
@@ -116,6 +122,21 @@ export default async function DashboardHome() {
           <p className="text-3xl font-bold text-white">{unreadNotifications ?? 0}</p>
           {(unreadNotifications ?? 0) > 0 && <p className="text-xs text-red-400 mt-1">homeowners to call</p>}
         </Link>
+
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-zinc-500">Opt-in rate</p>
+            <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-white">
+            {homeownerCount ? `${Math.round(((optedInCount ?? 0) / homeownerCount) * 100)}%` : '—'}
+          </p>
+          <p className="text-xs text-zinc-600 mt-1">{optedInCount ?? 0} of {homeownerCount ?? 0} opted in</p>
+        </div>
       </div>
 
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">

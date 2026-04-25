@@ -72,6 +72,69 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Follow-up texts: homeowners who got a storm alert 48-96h ago with no reply
+  const followUpStart = new Date(Date.now() - 96 * 3600 * 1000).toISOString()
+  const followUpEnd = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+
+  const { data: optedInHomeowners } = await supabase
+    .from('homeowners')
+    .select('id, name, phone, roofer_id, profiles(subscription_status)')
+    .eq('tcpa_consent', true)
+
+  for (const h of (optedInHomeowners ?? []) as any[]) {
+    if (h.profiles?.subscription_status !== 'active') continue
+
+    const { data: alertLog } = await supabase
+      .from('sms_logs')
+      .select('id, created_at')
+      .eq('homeowner_id', h.id)
+      .eq('direction', 'outbound')
+      .gte('created_at', followUpStart)
+      .lte('created_at', followUpEnd)
+      .limit(1)
+      .maybeSingle()
+
+    if (!alertLog) continue
+
+    const { data: replyAfter } = await supabase
+      .from('sms_logs')
+      .select('id')
+      .eq('homeowner_id', h.id)
+      .eq('direction', 'inbound')
+      .gt('created_at', alertLog.created_at)
+      .limit(1)
+      .maybeSingle()
+
+    if (replyAfter) continue
+
+    const { data: followUpAlready } = await supabase
+      .from('sms_logs')
+      .select('id')
+      .eq('homeowner_id', h.id)
+      .eq('direction', 'outbound')
+      .gt('created_at', alertLog.created_at)
+      .limit(1)
+      .maybeSingle()
+
+    if (followUpAlready) continue
+
+    const firstName = h.name.split(' ')[0]
+    const followUpMsg = `Hey ${firstName}, just following up — did you see our message about storm activity near your home? A free roof inspection could catch damage early before it gets costly. Reply YES if you'd like us to take a look.`
+
+    try {
+      await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
+      await supabase.from('sms_logs').insert({
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        message: followUpMsg,
+        direction: 'outbound',
+        status: 'sent',
+      })
+    } catch (err) {
+      console.error(`Follow-up SMS failed to ${h.phone}:`, err)
+    }
+  }
+
   const { data: homeowners } = await supabase
     .from('homeowners')
     .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
