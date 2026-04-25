@@ -5,6 +5,7 @@ import ManageBillingButton from './ManageBillingButton'
 import MessageStyleForm from './MessageStyleForm'
 import SignOutButton from '@/app/_components/SignOutButton'
 import PmContactForm from './PmContactForm'
+import FeedbackForm from './FeedbackForm'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
   const params = await searchParams
@@ -79,6 +80,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             </span>
             {profile?.stripe_customer_id && <ManageBillingButton customerId={profile.stripe_customer_id} />}
           </div>
+          <p className="text-xs text-zinc-600 mt-3">To cancel, click "Manage billing" and select Cancel subscription.</p>
+        </div>
+
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="font-semibold text-zinc-200 mb-1">Feedback</h2>
+          <p className="text-xs text-zinc-600 mb-4">Report a bug, request a feature, or just share a thought. Goes straight to the team.</p>
+          <FeedbackForm />
         </div>
       </div>
 

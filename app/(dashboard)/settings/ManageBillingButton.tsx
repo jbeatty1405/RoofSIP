@@ -20,7 +20,7 @@ export default function ManageBillingButton({ customerId }: { customerId: string
     <button
       onClick={handleClick}
       disabled={loading}
-      className="px-4 py-2 border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+      className="px-4 py-2 bg-zinc-800 border border-zinc-700 text-zinc-200 rounded-lg text-sm font-medium hover:bg-zinc-700 hover:border-zinc-600 disabled:opacity-50 transition-colors"
     >
       {loading ? 'Loading...' : 'Manage billing'}
     </button>
