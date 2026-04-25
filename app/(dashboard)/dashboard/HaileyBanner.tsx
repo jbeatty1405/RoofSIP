@@ -46,7 +46,7 @@ export default function HaileyBanner({ recentActivity }: { recentActivity?: stri
         </h2>
 
         <p className="text-base text-zinc-300 leading-relaxed mb-6" style={{ maxWidth: 340 }}>
-          Your AI storm assistant. She monitors every homeowner in your network around the clock — and the moment a storm hits their neighborhood, she follows up automatically, handles the conversation, and gets the inspection on your calendar. You just show up to the job.
+          Your AI storm assistant. She keeps tabs on every homeowner in your network around the clock. The moment a storm hits their neighborhood, she notifies them, handles the back and forth, and gets the appointment on your calendar. All you gotta do is show up.
         </p>
 
         <div className="flex items-center gap-2.5">
