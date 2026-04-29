@@ -18,7 +18,7 @@ export async function createClient() {
 
 export async function createServiceClient() {
   const cookieStore = await cookies()
-  return createServerClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  return createServerClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''), {
     cookies: {
       getAll() { return cookieStore.getAll() },
       setAll(cookiesToSet) {

@@ -32,6 +32,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (event.type === 'customer.subscription.updated') {
+    const isActive = obj.status === 'active' || obj.status === 'trialing'
+    await supabase
+      .from('profiles')
+      .update({ subscription_status: isActive ? 'active' : 'inactive' })
+      .eq('stripe_subscription_id', obj.id)
+  }
+
   if (event.type === 'customer.subscription.deleted' || event.type === 'customer.subscription.paused') {
     await supabase
       .from('profiles')
