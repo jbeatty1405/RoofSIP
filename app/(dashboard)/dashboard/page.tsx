@@ -74,7 +74,7 @@ export default async function DashboardHome() {
 
   return (
     <div>
-      {isTrial && <SubscribeBanner userId={user!.id} stripeCustomerId={profile?.stripe_customer_id} />}
+      {isTrial && <SubscribeBanner />}
 
       <HaileyBanner recentActivity={recentActivity} />
 

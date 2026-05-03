@@ -78,7 +78,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <span className={`text-xs px-2 py-0.5 rounded-full ${profile?.subscription_status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-500'}`}>
               {profile?.subscription_status === 'active' ? 'Active' : 'Inactive'}
             </span>
-            {profile?.stripe_customer_id && <ManageBillingButton customerId={profile.stripe_customer_id} />}
+            {profile?.stripe_customer_id && <ManageBillingButton />}
           </div>
           <p className="text-xs text-zinc-600 mt-3">To cancel, click "Manage billing" and select Cancel subscription.</p>
         </div>

@@ -1,29 +1,35 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildBookingConfirmationSms } from '@/app/_lib/twilio'
 import { addCalendarEvent } from '@/app/_lib/google'
+import { verifyBookingToken } from '@/app/_lib/booking-token'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
-  const pendingId = searchParams.get('id')
+  const token = searchParams.get('token') ?? searchParams.get('id')
+  const target = new URL('/booking/confirm', request.url)
+  if (token) target.searchParams.set('token', token)
+  return NextResponse.redirect(target, 303)
+}
 
-  if (!pendingId) return new NextResponse('Missing id', { status: 400 })
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => null) as { token?: string } | null
+  const token = body?.token
+  if (!token) return NextResponse.json({ error: 'Missing token' }, { status: 400 })
+
+  const verified = verifyBookingToken(token)
+  if (!verified) return NextResponse.json({ error: 'Invalid or expired link' }, { status: 400 })
 
   const supabase = await createServiceClient()
 
   const { data: pending } = await supabase
     .from('pending_bookings')
     .select('*, homeowners(*, profiles(pm_name, google_access_token, google_refresh_token, google_calendar_id))')
-    .eq('id', pendingId)
+    .eq('id', verified.pendingId)
     .eq('status', 'awaiting_pm_confirmation')
     .maybeSingle()
 
-  if (!pending) {
-    return new NextResponse('<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;max-width:400px;margin:auto"><h2>Already confirmed</h2><p>This inspection has already been booked.</p></body></html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    })
-  }
+  if (!pending) return NextResponse.json({ error: 'Already confirmed' }, { status: 409 })
 
   const homeowner = pending.homeowners
   const profile = homeowner.profiles
@@ -62,25 +68,22 @@ export async function GET(request: NextRequest) {
 
   const twilio = getTwilioClient()
   const confirmationMsg = buildBookingConfirmationSms(profile?.pm_name ?? 'your inspector', homeowner.name, dateStr)
-  await twilio.messages.create({
-    body: confirmationMsg,
-    from: process.env.TWILIO_PHONE_NUMBER!,
-    to: homeowner.phone,
-  })
-  await supabase.from('sms_logs').insert({
-    roofer_id: homeowner.roofer_id,
-    homeowner_id: homeowner.id,
-    message: confirmationMsg,
-    direction: 'outbound',
-    status: 'sent',
-  })
+  try {
+    await twilio.messages.create({
+      body: confirmationMsg,
+      from: process.env.TWILIO_PHONE_NUMBER!,
+      to: homeowner.phone,
+    })
+    await supabase.from('sms_logs').insert({
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      message: confirmationMsg,
+      direction: 'outbound',
+      status: 'sent',
+    })
+  } catch (err) {
+    console.error('Confirmation SMS failed:', err)
+  }
 
-  return new NextResponse(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;max-width:400px;margin:auto;text-align:center">
-    <div style="font-size:48px;margin-bottom:16px">✅</div>
-    <h2 style="color:#111">Inspection confirmed!</h2>
-    <p style="color:#555">${homeowner.name} has been texted their confirmation for <strong>${dateStr}</strong>.</p>
-  </body></html>`, {
-    status: 200,
-    headers: { 'Content-Type': 'text/html' },
-  })
+  return NextResponse.json({ ok: true, dateStr })
 }

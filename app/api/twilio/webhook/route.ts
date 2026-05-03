@@ -3,6 +3,8 @@ import { getTwilioClient, buildBookingConfirmationSms } from '@/app/_lib/twilio'
 import { addCalendarEvent } from '@/app/_lib/google'
 import { getMarketForZip } from '@/app/_lib/markets'
 import { parsePmTimeReply } from '@/app/_lib/ai-sms'
+import { tryParseTimeFast } from '@/app/_lib/rate-limit'
+import { signBookingToken } from '@/app/_lib/booking-token'
 import { sendPmConfirmationEmail } from '@/app/_lib/email'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
@@ -51,10 +53,14 @@ export async function POST(request: NextRequest) {
       const homeowner = pending.homeowners
       let confirmedTime: Date | null = null
 
+      const proposed = new Date(pending.proposed_slot)
       if (messageLower === 'yes' || messageLower === 'y') {
-        confirmedTime = new Date(pending.proposed_slot)
+        confirmedTime = proposed
       } else {
-        confirmedTime = await parsePmTimeReply(messageBody, new Date(pending.proposed_slot))
+        confirmedTime = tryParseTimeFast(messageBody, proposed)
+        if (!confirmedTime) {
+          confirmedTime = await parsePmTimeReply(messageBody, proposed)
+        }
       }
 
       if (confirmedTime) {
@@ -217,7 +223,7 @@ export async function POST(request: NextRequest) {
 
   // Email PM
   if (profile?.pm_email && newPending) {
-    const confirmUrl = `${process.env.NEXTAUTH_URL}/api/booking/confirm?id=${newPending.id}`
+    const confirmUrl = `${process.env.NEXTAUTH_URL}/booking/confirm?token=${signBookingToken(newPending.id)}`
     try {
       await sendPmConfirmationEmail({
         to: profile.pm_email,

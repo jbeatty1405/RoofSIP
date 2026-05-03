@@ -2,18 +2,19 @@
 
 import { useState } from 'react'
 
-export default function ManageBillingButton({ customerId }: { customerId: string }) {
+export default function ManageBillingButton() {
   const [loading, setLoading] = useState(false)
 
   async function handleClick() {
     setLoading(true)
-    const res = await fetch('/api/stripe/portal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customerId }),
-    })
-    const { url } = await res.json()
-    window.location.href = url
+    const res = await fetch('/api/stripe/portal', { method: 'POST' })
+    const { url, error } = await res.json()
+    if (url) {
+      window.location.href = url
+    } else {
+      setLoading(false)
+      alert(error ?? 'Could not open billing portal')
+    }
   }
 
   return (

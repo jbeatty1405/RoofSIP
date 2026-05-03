@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-export default function SubscribeBanner({ userId, stripeCustomerId }: { userId: string; stripeCustomerId?: string }) {
+export default function SubscribeBanner() {
   const [dismissed, setDismissed] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -10,13 +10,14 @@ export default function SubscribeBanner({ userId, stripeCustomerId }: { userId: 
 
   async function handleSubscribe() {
     setLoading(true)
-    const res = await fetch('/api/stripe/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, stripeCustomerId }),
-    })
-    const { url } = await res.json()
-    window.location.href = url
+    const res = await fetch('/api/stripe/checkout', { method: 'POST' })
+    const { url, error } = await res.json()
+    if (url) {
+      window.location.href = url
+    } else {
+      setLoading(false)
+      alert(error ?? 'Could not start checkout')
+    }
   }
 
   return (

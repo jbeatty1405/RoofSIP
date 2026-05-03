@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
+import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -20,15 +21,40 @@ export async function POST(request: NextRequest) {
 
   if (event.type === 'checkout.session.completed') {
     const userId = obj.metadata?.userId
-    if (userId) {
-      await supabase
+    const customerId = obj.customer as string | null
+    if (userId && customerId) {
+      const { data: profile } = await supabase
         .from('profiles')
-        .update({
-          stripe_customer_id: obj.customer as string,
-          stripe_subscription_id: obj.subscription as string,
-          subscription_status: 'active',
-        })
+        .select('id, stripe_customer_id')
         .eq('id', userId)
+        .single()
+
+      const { data: { user: authUser } } = await supabase.auth.admin.getUserById(userId)
+
+      let ok = false
+      if (profile && authUser?.email) {
+        if (profile.stripe_customer_id && profile.stripe_customer_id === customerId) {
+          ok = true
+        } else if (!profile.stripe_customer_id) {
+          const customer = await stripe.customers.retrieve(customerId)
+          if (!customer.deleted && (customer as Stripe.Customer).email === authUser.email) {
+            ok = true
+          }
+        }
+      }
+
+      if (ok) {
+        await supabase
+          .from('profiles')
+          .update({
+            stripe_customer_id: customerId,
+            stripe_subscription_id: obj.subscription as string,
+            subscription_status: 'active',
+          })
+          .eq('id', userId)
+      } else {
+        console.error('Stripe webhook: customer/user mismatch', { userId, customerId })
+      }
     }
   }
 
