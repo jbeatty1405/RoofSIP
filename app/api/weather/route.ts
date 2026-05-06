@@ -251,10 +251,7 @@ export async function POST(request: NextRequest) {
         status: msg.status,
       })
 
-      await supabase
-        .from('profiles')
-        .update({ sms_count_this_month: profile.sms_count_this_month + 1 })
-        .eq('id', profile.id)
+      await supabase.rpc('increment_sms_count', { p_id: profile.id })
 
       totalSent++
     } catch (err) {
