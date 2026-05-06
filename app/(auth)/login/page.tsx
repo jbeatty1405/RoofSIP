@@ -56,7 +56,7 @@ export default function LoginPage() {
             ))}
           </div>
         </div>
-        <p className="text-zinc-600 text-xs">© 2025 RoofSIP</p>
+        <p className="text-zinc-600 text-xs">© {new Date().getFullYear()} RoofSIP</p>
       </div>
 
       {/* Right form panel */}

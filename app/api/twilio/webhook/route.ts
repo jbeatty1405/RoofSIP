@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildBookingConfirmationSms } from '@/app/_lib/twilio'
-import { addCalendarEvent } from '@/app/_lib/google'
+import { addCalendarEvent, getAvailableSlots } from '@/app/_lib/google'
 import { getMarketForZip } from '@/app/_lib/markets'
 import { parsePmTimeReply } from '@/app/_lib/ai-sms'
 import { tryParseTimeFast } from '@/app/_lib/rate-limit'
@@ -196,21 +196,39 @@ export async function POST(request: NextRequest) {
     return new NextResponse('', { status: 200 })
   }
 
-  // Pick a proposed slot
-  const proposedSlot = generateProposedSlot(market)
+  // Pick a proposed slot — use Google Calendar if connected to avoid conflicts
+  let proposedSlot: Date
+  if (profile?.google_access_token && profile?.google_calendar_id) {
+    try {
+      const slots = await getAvailableSlots({
+        accessToken: profile.google_access_token,
+        refreshToken: profile.google_refresh_token,
+        calendarId: profile.google_calendar_id,
+        workingDays: market?.working_days ?? [1, 2, 3, 4, 5],
+        workingStart: market?.working_hours_start ?? '09:00',
+        workingEnd: market?.working_hours_end ?? '17:00',
+        count: 1,
+      })
+      proposedSlot = slots[0] ?? generateProposedSlot(market)
+    } catch {
+      proposedSlot = generateProposedSlot(market)
+    }
+  } else {
+    proposedSlot = generateProposedSlot(market)
+  }
+
   const proposedStr = proposedSlot.toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 
-  // Clear old pending and store new one
-  await supabase.from('pending_bookings').delete().eq('homeowner_id', homeowner.id)
-  const { data: newPending } = await supabase.from('pending_bookings').insert({
+  // Upsert pending booking (requires UNIQUE(homeowner_id) on pending_bookings)
+  const { data: newPending } = await supabase.from('pending_bookings').upsert({
     homeowner_id: homeowner.id,
     roofer_id: homeowner.roofer_id,
     slots: [proposedSlot.toISOString()],
     proposed_slot: proposedSlot.toISOString(),
     status: 'awaiting_pm_confirmation',
-  }).select().single()
+  }, { onConflict: 'homeowner_id' }).select().single()
 
   // Text homeowner
   const homeownerMsg = `Perfect! We're looking at ${proposedStr}. ${profile?.pm_name ?? 'Your contractor'} will confirm with you shortly.`

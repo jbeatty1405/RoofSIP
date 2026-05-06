@@ -1,4 +1,5 @@
 import { createClient } from '@/app/_lib/supabase/server'
+import { isSameOrigin } from '@/app/_lib/csrf'
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 
@@ -14,6 +15,8 @@ function escapeHtml(s: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

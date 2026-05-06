@@ -10,7 +10,7 @@ export default function PrivacyPage() {
       <div className="max-w-2xl mx-auto px-6 py-16">
         <Link href="/" className="text-cyan-400 text-sm hover:underline mb-8 inline-block">← Back to RoofSIP</Link>
         <h1 className="text-3xl font-bold text-white mb-2">Privacy Policy</h1>
-        <p className="text-zinc-500 text-sm mb-10">Effective date: May 1, 2025</p>
+        <p className="text-zinc-500 text-sm mb-10">Effective date: May 1, 2026</p>
 
         <div className="prose prose-invert prose-zinc max-w-none space-y-8 text-sm text-zinc-400 leading-relaxed">
 

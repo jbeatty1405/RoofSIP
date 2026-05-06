@@ -81,57 +81,78 @@ export async function POST(request: NextRequest) {
     .select('id, name, phone, roofer_id, profiles(subscription_status)')
     .eq('tcpa_consent', true)
 
-  for (const h of (optedInHomeowners ?? []) as any[]) {
-    if (h.profiles?.subscription_status !== 'active') continue
+  if ((optedInHomeowners ?? []).length > 0) {
+    const optedInIds = (optedInHomeowners ?? []).map((h: any) => h.id)
 
-    const { data: alertLog } = await supabase
+    // Bulk-fetch alert logs in the follow-up window (1 query instead of N)
+    const { data: windowAlertLogs } = await supabase
       .from('sms_logs')
-      .select('id, created_at')
-      .eq('homeowner_id', h.id)
+      .select('homeowner_id, sent_at')
+      .in('homeowner_id', optedInIds)
       .eq('direction', 'outbound')
-      .gte('created_at', followUpStart)
-      .lte('created_at', followUpEnd)
-      .limit(1)
-      .maybeSingle()
+      .gte('sent_at', followUpStart)
+      .lte('sent_at', followUpEnd)
 
-    if (!alertLog) continue
+    // Map homeowner_id → earliest alert time in window
+    const alertTimeByHomeowner = new Map<string, string>()
+    for (const log of windowAlertLogs ?? []) {
+      if (!alertTimeByHomeowner.has(log.homeowner_id)) {
+        alertTimeByHomeowner.set(log.homeowner_id, log.sent_at)
+      }
+    }
 
-    const { data: replyAfter } = await supabase
-      .from('sms_logs')
-      .select('id')
-      .eq('homeowner_id', h.id)
-      .eq('direction', 'inbound')
-      .gt('created_at', alertLog.created_at)
-      .limit(1)
-      .maybeSingle()
+    if (alertTimeByHomeowner.size > 0) {
+      const relevantIds = [...alertTimeByHomeowner.keys()]
+      const minAlertTime = [...alertTimeByHomeowner.values()].sort()[0]
 
-    if (replyAfter) continue
+      // Bulk-fetch all post-alert logs for relevant homeowners (2 queries instead of 2N)
+      const { data: postAlertLogs } = await supabase
+        .from('sms_logs')
+        .select('homeowner_id, direction, sent_at')
+        .in('homeowner_id', relevantIds)
+        .gt('sent_at', minAlertTime)
 
-    const { data: followUpAlready } = await supabase
-      .from('sms_logs')
-      .select('id')
-      .eq('homeowner_id', h.id)
-      .eq('direction', 'outbound')
-      .gt('created_at', alertLog.created_at)
-      .limit(1)
-      .maybeSingle()
+      const inboundByHomeowner = new Map<string, string[]>()
+      const outboundByHomeowner = new Map<string, string[]>()
+      for (const log of postAlertLogs ?? []) {
+        if (log.direction === 'inbound') {
+          const arr = inboundByHomeowner.get(log.homeowner_id) ?? []
+          arr.push(log.sent_at)
+          inboundByHomeowner.set(log.homeowner_id, arr)
+        } else {
+          const arr = outboundByHomeowner.get(log.homeowner_id) ?? []
+          arr.push(log.sent_at)
+          outboundByHomeowner.set(log.homeowner_id, arr)
+        }
+      }
 
-    if (followUpAlready) continue
+      for (const h of (optedInHomeowners ?? []) as any[]) {
+        if (h.profiles?.subscription_status !== 'active') continue
+        const alertTime = alertTimeByHomeowner.get(h.id)
+        if (!alertTime) continue
 
-    const firstName = h.name.split(' ')[0]
-    const followUpMsg = `Hey ${firstName}, just following up — did you see our message about storm activity near your home? A free roof inspection could catch damage early before it gets costly. Reply YES if you'd like us to take a look.`
+        const hasReply = (inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)
+        if (hasReply) continue
 
-    try {
-      await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
-      await supabase.from('sms_logs').insert({
-        roofer_id: h.roofer_id,
-        homeowner_id: h.id,
-        message: followUpMsg,
-        direction: 'outbound',
-        status: 'sent',
-      })
-    } catch (err) {
-      console.error(`Follow-up SMS failed to ${h.phone}:`, err)
+        const hasFollowUp = (outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)
+        if (hasFollowUp) continue
+
+        const firstName = h.name.split(' ')[0]
+        const followUpMsg = `Hey ${firstName}, just following up — did you see our message about storm activity near your home? A free roof inspection could catch damage early before it gets costly. Reply YES if you'd like us to take a look.`
+
+        try {
+          await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
+          await supabase.from('sms_logs').insert({
+            roofer_id: h.roofer_id,
+            homeowner_id: h.id,
+            message: followUpMsg,
+            direction: 'outbound',
+            status: 'sent',
+          })
+        } catch (err) {
+          console.error(`Follow-up SMS failed to ${h.phone}:`, err)
+        }
+      }
     }
   }
 
@@ -141,6 +162,16 @@ export async function POST(request: NextRequest) {
     .eq('tcpa_consent', true)
 
   if (!homeowners?.length) return NextResponse.json({ sent: 0 })
+
+  // Bulk-fetch today's sent logs (1 query instead of N)
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: todayLogs } = await supabase
+    .from('sms_logs')
+    .select('homeowner_id')
+    .in('homeowner_id', homeowners.map((h: any) => h.id))
+    .eq('direction', 'outbound')
+    .gte('sent_at', `${today}T00:00:00Z`)
+  const sentTodaySet = new Set(todayLogs?.map((l: any) => l.homeowner_id))
 
   const zips = [...new Set(homeowners.map((h: any) => h.zip_code))]
   const alertsByZip: Record<string, Awaited<ReturnType<typeof getAlertsForZip>>> = {}
@@ -162,17 +193,7 @@ export async function POST(request: NextRequest) {
     const alerts = alertsByZip[homeowner.zip_code] ?? []
     if (!alerts.length) continue
 
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: recentLog } = await supabase
-      .from('sms_logs')
-      .select('id')
-      .eq('homeowner_id', homeowner.id)
-      .eq('direction', 'outbound')
-      .gte('sent_at', `${today}T00:00:00Z`)
-      .limit(1)
-      .maybeSingle()
-
-    if (recentLog) continue
+    if (sentTodaySet.has(homeowner.id)) continue
 
     // Load templates for this roofer (cached)
     if (!templateCache[profile.id]) {
