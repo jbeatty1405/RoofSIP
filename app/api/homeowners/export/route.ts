@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
+function csvSafe(s: string): string {
+  const escaped = s.replace(/"/g, '""')
+  return /^[=+\-@\t\r]/.test(escaped) ? `"'${escaped}"` : `"${escaped}"`
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -12,17 +17,18 @@ export async function GET(request: NextRequest) {
     .from('sms_logs')
     .select('*, homeowners(name, phone, address)')
     .eq('roofer_id', user.id)
-    .order('created_at', { ascending: false })
+    .order('sent_at', { ascending: false })
+    .limit(5000)
 
   const rows = [
     ['Date', 'Homeowner', 'Phone', 'Address', 'Direction', 'Message'].join(','),
     ...(logs ?? []).map((l: any) => [
-      new Date(l.created_at).toLocaleString(),
-      `"${(l.homeowners?.name ?? '').replace(/"/g, '""')}"`,
-      l.homeowners?.phone ?? '',
-      `"${(l.homeowners?.address ?? '').replace(/"/g, '""')}"`,
-      l.direction,
-      `"${(l.message ?? '').replace(/"/g, '""')}"`,
+      new Date(l.sent_at).toLocaleString(),
+      csvSafe(l.homeowners?.name ?? ''),
+      csvSafe(l.homeowners?.phone ?? ''),
+      csvSafe(l.homeowners?.address ?? ''),
+      csvSafe(l.direction ?? ''),
+      csvSafe(l.message ?? ''),
     ].join(',')),
   ]
 

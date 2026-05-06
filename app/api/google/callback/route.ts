@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
   const error = searchParams.get('error')
 
   if (error || !code) {
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(`${origin}/login`)
+
+  if (!state || state !== user.id) {
+    return NextResponse.redirect(`${origin}/settings?error=google`)
+  }
 
   const tokens = await exchangeCodeForTokens(code)
 

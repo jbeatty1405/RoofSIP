@@ -10,6 +10,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { notes } = await request.json()
+  if (typeof notes !== 'string') return NextResponse.json({ error: 'Invalid notes' }, { status: 400 })
+  if (notes.length > 8000) return NextResponse.json({ error: 'Notes too long' }, { status: 400 })
 
   const { error } = await supabase
     .from('homeowners')

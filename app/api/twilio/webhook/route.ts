@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
   const payload = Object.fromEntries(params.entries())
 
   const twilioSignature = request.headers.get('x-twilio-signature') ?? ''
-  const url = `${process.env.NEXTAUTH_URL}/api/twilio/webhook`
+  const { host, protocol } = new URL(request.url)
+  const url = `${protocol}//${host}/api/twilio/webhook`
   const isValid = validateRequest(
     process.env.TWILIO_AUTH_TOKEN!,
     twilioSignature,
@@ -115,7 +116,8 @@ export async function POST(request: NextRequest) {
     .from('homeowners')
     .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style, google_access_token, google_refresh_token, google_calendar_id)')
     .eq('phone', fromPhone)
-    .single()
+    .limit(1)
+    .maybeSingle()
 
   if (!homeowner) return new NextResponse('', { status: 200 })
 
