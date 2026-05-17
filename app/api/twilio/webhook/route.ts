@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString() })
         .eq('id', homeowner.id)
 
-      const msg = `You're in! We'll text you a heads up whenever there's storm activity near your home, along with an offer for a free roof inspection. Reply STOP anytime to opt out.`
+      const msg = `You're in! This is Hailey. I'll keep an eye on storm activity near your home and reach out when anything hits. Reply STOP anytime to opt out.`
       await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
       await supabase.from('sms_logs').insert({
         roofer_id: homeowner.roofer_id,
@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
         status: 'sent',
       })
     } else if (isOptOut) {
-      const msg = `Got it — we won't reach out again. Have a great day!`
+      const msg = `Got it! We won't reach out again. Take care.`
       await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
     }
 
@@ -183,7 +183,11 @@ export async function POST(request: NextRequest) {
       message: `Call ${homeowner.name} at ${homeowner.phone} to schedule their free roof inspection — they replied YES to the storm alert.`,
     })
 
-    const msg = `Thanks! ${profile?.pm_name ?? 'Your contractor'} will be in touch soon to schedule your free inspection.`
+    const pmPhone = profile?.pm_phone
+    const pmName = profile?.pm_name ?? 'your inspector'
+    const msg = pmPhone
+      ? `Great! ${pmName} will reach out within the hour to lock in your time. Their number is ${pmPhone}.`
+      : `Great! ${pmName} will reach out within the hour to get your inspection scheduled.`
     await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
     await supabase.from('sms_logs').insert({
       roofer_id: homeowner.roofer_id,
@@ -231,7 +235,7 @@ export async function POST(request: NextRequest) {
   }, { onConflict: 'homeowner_id' }).select().single()
 
   // Text homeowner
-  const homeownerMsg = `Perfect! We're looking at ${proposedStr}. ${profile?.pm_name ?? 'Your contractor'} will confirm with you shortly.`
+  const homeownerMsg = `Perfect! I've got you down for ${proposedStr}. ${profile?.pm_name ?? 'Your inspector'} will confirm shortly.`
   await twilio.messages.create({ body: homeownerMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
   await supabase.from('sms_logs').insert({
     roofer_id: homeowner.roofer_id,

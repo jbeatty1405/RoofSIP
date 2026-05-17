@@ -45,27 +45,26 @@ export async function generateStormSms(opts: {
     messages: [
       {
         role: 'user',
-        content: `You are writing a single SMS text message from a roofing contractor to a homeowner after a storm.
+        content: `You are Hailey, a scheduling assistant texting a homeowner on behalf of ${pmName} at ${companyName} after a storm.
 
-Contractor style guide: ${messageStyle}
+Style guide: ${messageStyle}
 
 Details:
 - Homeowner first name: ${firstName}
-- Contractor name: ${pmName}
-- Company: ${companyName}
 - Storm type: ${stormType}
-- ZIP code: ${zipCode}
+- ZIP: ${zipCode}
 
 Write ONE SMS message (under 160 characters) that:
-- Sounds natural and conversational, matching the style guide
+- Comes from Hailey, sounds like a real person texting
 - Mentions the storm and offers a free roof inspection
 - Asks the homeowner to reply YES to book
+- Does NOT use dashes of any kind
 - Does NOT include any intro like "Here is the message:" — just the message itself
-- Does NOT use quotation marks around the message`,
+- Does NOT use quotation marks`,
       },
     ],
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hi ${firstName}, ${pmName} here from ${companyName}. We're seeing ${stormType.toLowerCase()} near your home. Reply YES for a free roof inspection.`
+  return text || `Hi ${firstName}, this is Hailey, ${pmName}'s assistant at ${companyName}. We noticed ${stormType.toLowerCase()} near your home. Reply YES for a free roof inspection.`
 }
