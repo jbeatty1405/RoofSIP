@@ -10,7 +10,7 @@ const passwordInput = 'input[type="password"]'
 test.describe('Auth', () => {
   test('login page renders', async ({ page }) => {
     await page.goto('/login')
-    await expect(page.getByText('Sign in')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
     await expect(page.locator(emailInput)).toBeVisible()
     await expect(page.locator(passwordInput)).toBeVisible()
     await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()

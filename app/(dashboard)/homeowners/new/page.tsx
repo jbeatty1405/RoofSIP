@@ -73,20 +73,20 @@ export default function NewHomeownerPage() {
 
       <form onSubmit={handleSubmit} className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 flex flex-col gap-5">
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Full name</label>
-          <input type="text" value={form.name} onChange={e => set('name', e.target.value)} required className={inputClass} placeholder="Sarah Johnson" />
+          <label htmlFor="ho-name" className="block text-sm font-medium text-zinc-300 mb-1.5">Full name</label>
+          <input id="ho-name" type="text" value={form.name} onChange={e => set('name', e.target.value)} required className={inputClass} placeholder="Sarah Johnson" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Phone number</label>
-          <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+1 (555) 000-0000" className={inputClass} />
+          <label htmlFor="ho-phone" className="block text-sm font-medium text-zinc-300 mb-1.5">Phone number</label>
+          <input id="ho-phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+1 (555) 000-0000" className={inputClass} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">Address</label>
-          <input type="text" value={form.address} onChange={e => set('address', e.target.value)} required placeholder="123 Main St, Tucson, AZ" className={inputClass} />
+          <label htmlFor="ho-address" className="block text-sm font-medium text-zinc-300 mb-1.5">Address</label>
+          <input id="ho-address" type="text" value={form.address} onChange={e => set('address', e.target.value)} required placeholder="123 Main St, Tucson, AZ" className={inputClass} />
         </div>
         <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">ZIP code</label>
-          <input type="text" value={form.zipCode} onChange={e => set('zipCode', e.target.value)} required maxLength={5} pattern="[0-9]{5}" placeholder="85701" className={inputClass} />
+          <label htmlFor="ho-zip" className="block text-sm font-medium text-zinc-300 mb-1.5">ZIP code</label>
+          <input id="ho-zip" type="text" value={form.zipCode} onChange={e => set('zipCode', e.target.value)} required maxLength={5} pattern="[0-9]{5}" placeholder="85701" className={inputClass} />
         </div>
 
         <div>

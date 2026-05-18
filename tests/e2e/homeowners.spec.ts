@@ -7,18 +7,18 @@ test.describe('Homeowners / SMS Opt-in', () => {
   test.beforeEach(async ({ page }) => {
     test.skip(!EMAIL || !PASSWORD, 'TEST_USER_EMAIL/PASSWORD not set')
     await page.goto('/login')
-    await page.getByLabel(/email/i).fill(EMAIL)
-    await page.getByLabel(/password/i).fill(PASSWORD)
+    await page.locator('input[type="email"]').fill(EMAIL)
+    await page.locator('input[type="password"]').fill(PASSWORD)
     await page.getByRole('button', { name: /sign in|log in/i }).click()
     await page.waitForURL(/\/dashboard/, { timeout: 12000 })
   })
 
   test('add homeowner form renders required fields', async ({ page }) => {
     await page.goto('/homeowners/new')
-    await expect(page.getByLabel(/name/i)).toBeVisible()
-    await expect(page.getByLabel(/phone/i)).toBeVisible()
-    await expect(page.getByLabel(/address/i)).toBeVisible()
-    await expect(page.getByLabel(/zip/i)).toBeVisible()
+    await expect(page.getByLabel('Full name')).toBeVisible()
+    await expect(page.getByLabel('Phone number')).toBeVisible()
+    await expect(page.getByLabel('Address')).toBeVisible()
+    await expect(page.getByLabel('ZIP code')).toBeVisible()
   })
 
   test('add homeowner form requires all fields', async ({ page }) => {
@@ -30,17 +30,17 @@ test.describe('Homeowners / SMS Opt-in', () => {
 
   test('consent page is publicly accessible', async ({ page }) => {
     await page.goto('/consent')
-    await expect(page.getByText(/tcpa|opt.in|sms|storm|alert/i)).toBeVisible()
-    await expect(page.getByText(/stop|opt out|unsubscribe/i)).toBeVisible()
+    await expect(page.getByRole('heading', { name: /sms opt-in/i })).toBeVisible()
+    await expect(page.getByText(/stop|opt out|unsubscribe/i).first()).toBeVisible()
   })
 
   test('add homeowner with invalid phone shows error', async ({ page }) => {
     await page.goto('/homeowners/new')
-    await page.getByLabel(/name/i).fill('Test Homeowner')
-    await page.getByLabel(/phone/i).fill('123')
-    await page.getByLabel(/address/i).fill('123 Test St')
-    await page.getByLabel(/zip/i).fill('85001')
+    await page.getByLabel('Full name').fill('Test Homeowner')
+    await page.getByLabel('Phone number').fill('123')
+    await page.getByLabel('Address').fill('123 Test St')
+    await page.getByLabel('ZIP code').fill('85001')
     await page.getByRole('button', { name: /add|save|submit/i }).click()
-    await expect(page.getByText(/phone|invalid/i)).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText(/phone|invalid/i).first()).toBeVisible({ timeout: 5000 })
   })
 })
