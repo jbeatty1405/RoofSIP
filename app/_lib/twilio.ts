@@ -7,12 +7,52 @@ export function getTwilioClient() {
   )
 }
 
-export function buildWeatherSms(pmName: string, homeownerName: string, eventType: string, proposedTime: string): string {
+export function cleanCompanyName(raw: string): string {
+  let name = raw
+    .replace(/\b(LLC|L\.L\.C\.?|PLLC|Inc\.?|Corp\.?|Ltd\.?|Co\.?|PLC)\b\.?/gi, '')
+    .replace(/\s*(?:and|&)\s+(?:restoration|construction|remodeling|renovation|services|service|sons|company|associates|partners|group|repair|repairs)\b.*/gi, '')
+    .replace(/\s+of\s+\w+$/gi, '')
+    .replace(/\s+(?:arizona|texas|california|florida|nevada|colorado|utah|georgia|ohio|michigan|illinois|washington|oregon|minnesota|wisconsin)\b$/gi, '')
+    .replace(/[,\s]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const words = name.split(' ')
+  if (words.length > 3) {
+    const roofIdx = words.findIndex(w => /roofing?/i.test(w))
+    name = roofIdx > -1 && roofIdx <= 2
+      ? words.slice(0, roofIdx + 1).join(' ')
+      : words.slice(0, 2).join(' ')
+  }
+
+  return name || raw.trim()
+}
+
+function haileyIntroAndAppointment(pmName: string, companyName: string | undefined, proposedTime: string) {
+  const pmFirst = pmName.split(' ')[0]
+  if (companyName) {
+    const cleaned = cleanCompanyName(companyName)
+    const hasRoofing = /roof/i.test(cleaned)
+    return {
+      intro: `Hailey from ${cleaned}`,
+      appointment: hasRoofing
+        ? `${pmFirst}'s first available is ${proposedTime}`
+        : `${pmFirst}'s first available roof inspection is ${proposedTime}`,
+    }
+  }
+  return {
+    intro: `Hailey from ${pmFirst}'s roofing team`,
+    appointment: `${pmFirst}'s first available roof inspection is ${proposedTime}`,
+  }
+}
+
+export function buildWeatherSms(pmName: string, homeownerName: string, eventType: string, proposedTime: string, companyName?: string): string {
   const firstName = homeownerName.split(' ')[0]
+  const { intro, appointment } = haileyIntroAndAppointment(pmName, companyName, proposedTime)
   const templates = [
-    `Hey ${firstName}, Hailey here. We just had ${eventType.toLowerCase()} near your home. ${pmName} has you down for ${proposedTime} for a free roof check. Reply YES to confirm.`,
-    `Hey ${firstName}, Hailey with ${pmName}'s team. There was ${eventType.toLowerCase()} near your home. ${pmName} is coming by ${proposedTime} for a free roof inspection. Reply YES to confirm.`,
-    `Hey ${firstName}, it's Hailey. We just had ${eventType.toLowerCase()} in your area. ${pmName} has ${proposedTime} blocked for your free roof check. Reply YES to confirm.`,
+    `Hey ${firstName}, ${intro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${appointment}, does that work for you? Reply YES.`,
+    `Hey ${firstName}, ${intro} here. You're signed up for storm alerts with ${pmName} and our system just picked up activity near your home. ${appointment}. Does that work? Reply YES.`,
+    `Hey ${firstName}, ${intro} here. Our system flagged storm activity near your home — you signed up for alerts with ${pmName}. ${appointment}. Does that work for you? Reply YES.`,
   ]
   return templates[Math.floor(Math.random() * templates.length)]
 }

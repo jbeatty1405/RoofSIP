@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { cleanCompanyName } from '@/app/_lib/twilio'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -40,35 +41,40 @@ export async function generateStormSms(opts: {
 }): Promise<string> {
   const { firstName, pmName, companyName, stormType, zipCode, messageStyle, proposedTime } = opts
 
+  const pmFirst = pmName.split(' ')[0]
+  const cleaned = companyName ? cleanCompanyName(companyName) : ''
+  const hasRoofing = /roof/i.test(cleaned)
+  const haleyIntro = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
+  const appointmentLine = cleaned && hasRoofing
+    ? `${pmFirst}'s first available is ${proposedTime}`
+    : `${pmFirst}'s first available roof inspection is ${proposedTime}`
+
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 200,
     messages: [
       {
         role: 'user',
-        content: `You are Hailey, a scheduling assistant texting a homeowner on behalf of ${pmName} at ${companyName} after a storm.
+        content: `You are writing an SMS from ${haleyIntro} to a homeowner after a storm.
 
 Style guide: ${messageStyle}
 
 Details:
 - Homeowner first name: ${firstName}
+- PM full name: ${pmName}
 - Storm type: ${stormType}
 - ZIP: ${zipCode}
-- Proposed inspection time: ${proposedTime}
 
-Write ONE SMS message (under 160 characters) that:
-- Starts with "Hey ${firstName}, Hailey here."
-- Mentions the recent ${stormType} near their home
-- States ${pmName} has them down for ${proposedTime} for a free roof check — assumptive, not asking permission
-- Ends with "Reply YES to confirm."
-- Sounds like a real person texting
-- Does NOT use dashes of any kind
-- Does NOT include any intro like "Here is the message:" — just the message itself
-- Does NOT use quotation marks`,
+Write ONE SMS that follows this structure exactly:
+1. "Hey ${firstName}, ${haleyIntro} here."
+2. "You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home."
+3. "${appointmentLine}, does that work for you? Reply YES."
+
+Keep it natural and conversational. Do NOT use dashes of any kind. Do NOT include any intro like "Here is the message:" — just the message itself. Do NOT use quotation marks.`,
       },
     ],
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hey ${firstName}, Hailey here. We just had ${stormType.toLowerCase()} near your home. ${pmName} has you down for ${proposedTime} for a free roof check. Reply YES to confirm.`
+  return text || `Hey ${firstName}, ${haleyIntro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${appointmentLine}, does that work for you? Reply YES.`
 }

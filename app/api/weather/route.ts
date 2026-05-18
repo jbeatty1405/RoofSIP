@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
             zip_code: homeowner.zip_code,
             proposed_time: proposedTime,
           })
-        : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime)
+        : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
     }
 
     try {
