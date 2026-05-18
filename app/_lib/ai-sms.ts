@@ -36,8 +36,9 @@ export async function generateStormSms(opts: {
   stormType: string
   zipCode: string
   messageStyle: string
+  proposedTime: string
 }): Promise<string> {
-  const { firstName, pmName, companyName, stormType, zipCode, messageStyle } = opts
+  const { firstName, pmName, companyName, stormType, zipCode, messageStyle, proposedTime } = opts
 
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
@@ -53,12 +54,14 @@ Details:
 - Homeowner first name: ${firstName}
 - Storm type: ${stormType}
 - ZIP: ${zipCode}
+- Proposed inspection time: ${proposedTime}
 
 Write ONE SMS message (under 160 characters) that:
-- Reminds them they signed up for storm alerts through ${pmName}'s team
-- Mentions the recent ${stormType} and that ${pmName} is scheduling free roof checks this week
-- Ends assumptively: "${pmName} will call to set a time. Reply YES."
-- Sounds like a real person texting, not a marketing blast
+- Starts with "Hey ${firstName}, Hailey here."
+- Mentions the recent ${stormType} near their home
+- States ${pmName} has them down for ${proposedTime} for a free roof check — assumptive, not asking permission
+- Ends with "Reply YES to confirm."
+- Sounds like a real person texting
 - Does NOT use dashes of any kind
 - Does NOT include any intro like "Here is the message:" — just the message itself
 - Does NOT use quotation marks`,
@@ -67,5 +70,5 @@ Write ONE SMS message (under 160 characters) that:
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hi ${firstName}, Hailey here. You signed up for storm alerts through ${pmName}'s team. We just had ${stormType.toLowerCase()} near your home and ${pmName} is scheduling free roof checks this week. Reply YES and ${pmName} will call to set a time.`
+  return text || `Hey ${firstName}, Hailey here. We just had ${stormType.toLowerCase()} near your home. ${pmName} has you down for ${proposedTime} for a free roof check. Reply YES to confirm.`
 }
