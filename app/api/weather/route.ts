@@ -168,10 +168,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const now = new Date().toISOString()
   const { data: homeowners } = await supabase
     .from('homeowners')
     .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
     .eq('tcpa_consent', true)
+    .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
 
   if (!homeowners?.length) return NextResponse.json({ sent: 0 })
 

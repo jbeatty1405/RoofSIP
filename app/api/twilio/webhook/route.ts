@@ -128,6 +128,17 @@ export async function POST(request: NextRequest) {
     return new NextResponse('', { status: 200 })
   }
 
+  // HO declined with no active booking (replied no to "Mike will reach out" text) — pause for 30 days
+  if (isNo && !pending) {
+    const pauseUntil = new Date()
+    pauseUntil.setDate(pauseUntil.getDate() + 30)
+    await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
+    const closeMsg = `No problem at all! If anything changes down the road, we're here.`
+    await twilio.messages.create({ body: closeMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: closeMsg, direction: 'outbound', status: 'sent' })
+    return new NextResponse('', { status: 200 })
+  }
+
   // HO declined proposed time — ask for their best time
   if (isNo && pending?.status === 'awaiting_ho_reply') {
     const noMsg = `No problem! When's the best time for you?`
