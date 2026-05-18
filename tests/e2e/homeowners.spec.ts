@@ -15,10 +15,10 @@ test.describe('Homeowners / SMS Opt-in', () => {
 
   test('add homeowner form renders required fields', async ({ page }) => {
     await page.goto('/homeowners/new')
-    await expect(page.getByLabel('Full name')).toBeVisible()
-    await expect(page.getByLabel('Phone number')).toBeVisible()
-    await expect(page.getByLabel('Address')).toBeVisible()
-    await expect(page.getByLabel('ZIP code')).toBeVisible()
+    await expect(page.locator('#ho-name')).toBeVisible()
+    await expect(page.locator('#ho-phone')).toBeVisible()
+    await expect(page.locator('#ho-address')).toBeVisible()
+    await expect(page.locator('#ho-zip')).toBeVisible()
   })
 
   test('add homeowner form requires all fields', async ({ page }) => {
@@ -36,10 +36,10 @@ test.describe('Homeowners / SMS Opt-in', () => {
 
   test('add homeowner with invalid phone shows error', async ({ page }) => {
     await page.goto('/homeowners/new')
-    await page.getByLabel('Full name').fill('Test Homeowner')
-    await page.getByLabel('Phone number').fill('123')
-    await page.getByLabel('Address').fill('123 Test St')
-    await page.getByLabel('ZIP code').fill('85001')
+    await page.locator('#ho-name').fill('Test Homeowner')
+    await page.locator('#ho-phone').fill('123')
+    await page.locator('#ho-address').fill('123 Test St')
+    await page.locator('#ho-zip').fill('85001')
     await page.getByRole('button', { name: /add|save|submit/i }).click()
     await expect(page.getByText(/phone|invalid/i).first()).toBeVisible({ timeout: 5000 })
   })
