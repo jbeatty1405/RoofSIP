@@ -55,9 +55,10 @@ Details:
 - ZIP: ${zipCode}
 
 Write ONE SMS message (under 160 characters) that:
-- Comes from Hailey, sounds like a real person texting
-- Mentions the storm and offers a free roof inspection
-- Asks the homeowner to reply YES to book
+- Reminds them they signed up for storm alerts through ${pmName}'s team
+- Mentions the recent ${stormType} and that ${pmName} is scheduling free roof checks this week
+- Ends assumptively: "${pmName} will call to set a time. Reply YES."
+- Sounds like a real person texting, not a marketing blast
 - Does NOT use dashes of any kind
 - Does NOT include any intro like "Here is the message:" — just the message itself
 - Does NOT use quotation marks`,
@@ -66,5 +67,5 @@ Write ONE SMS message (under 160 characters) that:
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hi ${firstName}, this is Hailey, ${pmName}'s assistant at ${companyName}. We noticed ${stormType.toLowerCase()} near your home. Reply YES for a free roof inspection.`
+  return text || `Hi ${firstName}, Hailey here. You signed up for storm alerts through ${pmName}'s team. We just had ${stormType.toLowerCase()} near your home and ${pmName} is scheduling free roof checks this week. Reply YES and ${pmName} will call to set a time.`
 }

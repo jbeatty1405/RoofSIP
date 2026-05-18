@@ -10,9 +10,9 @@ export function getTwilioClient() {
 export function buildWeatherSms(pmName: string, homeownerName: string, eventType: string): string {
   const firstName = homeownerName.split(' ')[0]
   const templates = [
-    `Hi ${firstName}, this is Hailey, ${pmName}'s assistant. We're seeing ${eventType.toLowerCase()} activity near your home and want to make sure your roof is okay. Want us to stop by for a free inspection? Just reply YES.`,
-    `Hey ${firstName}, Hailey here with ${pmName}'s team. With the recent ${eventType.toLowerCase()} in your area, we like to check in on our homeowners. Reply YES and I'll get you on the schedule for a free inspection.`,
-    `Hi ${firstName}, it's Hailey. We noticed ${eventType.toLowerCase()} near your home and want to make sure there's no damage to your roof. Reply YES to book a free inspection at your convenience.`,
+    `Hi ${firstName}, Hailey here. You signed up for storm alerts through ${pmName}'s team. We just had ${eventType.toLowerCase()} near your home and ${pmName} is scheduling free roof checks this week. Reply YES and ${pmName} will call to set a time.`,
+    `Hey ${firstName}, Hailey with ${pmName}'s team. You're on our storm watch list and we just got hit with ${eventType.toLowerCase()} in your area. ${pmName} is doing free roof checks this week. Reply YES and he'll call you.`,
+    `Hi ${firstName}, it's Hailey. You signed up for storm alerts through ${pmName} and we just had ${eventType.toLowerCase()} near your home. ${pmName} is scheduling free inspections this week. Reply YES and he'll reach out.`,
   ]
   return templates[Math.floor(Math.random() * templates.length)]
 }
