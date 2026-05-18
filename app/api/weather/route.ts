@@ -1,9 +1,10 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getAlertsForZip } from '@/app/_lib/noaa'
-import { getTwilioClient } from '@/app/_lib/twilio'
+import { getTwilioClient, buildWeatherSms } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketForZip, getNextAvailableSlot } from '@/app/_lib/markets'
+import { buildNoTimeWeatherSms } from '@/app/_lib/twilio'
 import { NextRequest, NextResponse } from 'next/server'
 
 function formatSlot(slot: Date): string {
@@ -220,47 +221,52 @@ export async function POST(request: NextRequest) {
     const firstName = homeowner.name.split(' ')[0]
     const pmName = profile.pm_name ?? 'Your inspector'
 
-    // Pick proposed slot before sending so it's baked into the SMS
     const market = await getMarketForZip(supabase, homeowner.zip_code)
-    const proposedSlot = market
-      ? await getNextAvailableSlot(supabase, market, profile.id)
-      : (() => {
-          const d = new Date()
-          d.setDate(d.getDate() + 1)
-          while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1)
-          d.setHours(10, 0, 0, 0)
-          return d
-        })()
-    const proposedTime = formatSlot(proposedSlot)
 
     let message: string
-    if (profile.message_style) {
-      try {
-        message = await generateStormSms({
-          firstName,
-          pmName,
-          companyName: profile.company_name ?? '',
-          stormType: alert.type,
-          zipCode: homeowner.zip_code,
-          messageStyle: profile.message_style,
-          proposedTime,
-        })
-      } catch {
-        message = `Hey ${firstName}, Hailey here. We just had ${alert.type.toLowerCase()} near your home. ${pmName} has you down for ${proposedTime} for a free roof check. Reply YES to confirm.`
-      }
+    let proposedSlot: Date | null = null
+
+    if (!market) {
+      // No schedule configured — inform HO, notify PM directly
+      message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
+      await supabase.from('notifications').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'hot_lead',
+        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. No schedule set — reach out to book their free inspection. Call: ${homeowner.phone}`,
+      })
     } else {
-      const { buildWeatherSms } = await import('@/app/_lib/twilio')
-      const templateBody = pickTemplate(templateCache[profile.id], alert.type)
-      message = templateBody
-        ? resolveTemplate(templateBody, {
-            first_name: firstName,
-            pm_name: pmName,
-            company_name: profile.company_name ?? '',
-            storm_type: alert.type.toLowerCase(),
-            zip_code: homeowner.zip_code,
-            proposed_time: proposedTime,
+      // Market configured — pick slot and bake it into the SMS
+      proposedSlot = await getNextAvailableSlot(supabase, market, profile.id)
+      const proposedTime = formatSlot(proposedSlot)
+
+      if (profile.message_style) {
+        try {
+          message = await generateStormSms({
+            firstName,
+            pmName,
+            companyName: profile.company_name ?? '',
+            stormType: alert.type,
+            zipCode: homeowner.zip_code,
+            messageStyle: profile.message_style,
+            proposedTime,
           })
-        : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
+        } catch {
+          message = buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
+        }
+      } else {
+        const templateBody = pickTemplate(templateCache[profile.id], alert.type)
+        message = templateBody
+          ? resolveTemplate(templateBody, {
+              first_name: firstName,
+              pm_name: pmName,
+              company_name: profile.company_name ?? '',
+              storm_type: alert.type.toLowerCase(),
+              zip_code: homeowner.zip_code,
+              proposed_time: proposedTime,
+            })
+          : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
+      }
     }
 
     try {
@@ -279,14 +285,15 @@ export async function POST(request: NextRequest) {
         status: msg.status,
       })
 
-      // Store proposed slot so YES reply can notify PM with the confirmed time
-      await supabase.from('pending_bookings').upsert({
-        homeowner_id: homeowner.id,
-        roofer_id: homeowner.roofer_id,
-        proposed_slot: proposedSlot.toISOString(),
-        slots: [proposedSlot.toISOString()],
-        status: 'awaiting_ho_reply',
-      }, { onConflict: 'homeowner_id' })
+      if (proposedSlot) {
+        await supabase.from('pending_bookings').upsert({
+          homeowner_id: homeowner.id,
+          roofer_id: homeowner.roofer_id,
+          proposed_slot: proposedSlot.toISOString(),
+          slots: [proposedSlot.toISOString()],
+          status: 'awaiting_ho_reply',
+        }, { onConflict: 'homeowner_id' })
+      }
 
       await supabase.rpc('increment_sms_count', { p_id: profile.id })
 

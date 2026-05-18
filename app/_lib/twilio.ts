@@ -57,6 +57,14 @@ export function buildWeatherSms(pmName: string, homeownerName: string, eventType
   return templates[Math.floor(Math.random() * templates.length)]
 }
 
+export function buildNoTimeWeatherSms(pmName: string, homeownerName: string, companyName?: string): string {
+  const firstName = homeownerName.split(' ')[0]
+  const pmFirst = pmName.split(' ')[0]
+  const cleaned = companyName ? cleanCompanyName(companyName) : ''
+  const intro = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
+  return `Hey ${firstName}, ${intro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${pmFirst} will be reaching out shortly to schedule your free roof inspection.`
+}
+
 export function buildBookingConfirmationSms(pmName: string, homeownerName: string, dateStr: string): string {
   const firstName = homeownerName.split(' ')[0]
   return `You're all set, ${firstName}! ${pmName} will stop by on ${dateStr} for your free roof inspection. See you then. Reply STOP to cancel.`

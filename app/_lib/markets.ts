@@ -60,6 +60,6 @@ export async function getNextAvailableSlot(
   while (fallback.getDay() === 0 || fallback.getDay() === 6) {
     fallback.setDate(fallback.getDate() + 1)
   }
-  fallback.setHours(10, 0, 0, 0)
+  fallback.setHours(9, 0, 0, 0)
   return fallback
 }
