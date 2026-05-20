@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
 
   const { data: optedInHomeowners } = await supabase
     .from('homeowners')
-    .select('id, name, phone, roofer_id, profiles(subscription_status)')
+    .select('id, name, phone, roofer_id, profiles(subscription_status, pm_name, company_name)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
 
@@ -152,7 +152,8 @@ export async function POST(request: NextRequest) {
         if (hasFollowUp) continue
 
         const firstName = h.name.split(' ')[0]
-        const followUpMsg = `Hey ${firstName}, just following up on our last message about the weather near your home — still happy to get your roof checked out for free if you're interested.`
+        const pmFirst = (h.profiles?.pm_name ?? 'your inspector').split(' ')[0]
+        const followUpMsg = `Hey ${firstName}, Hailey again — just wanted to make sure you saw my last message about the weather near your home. ${pmFirst} still has a spot open for your free roof check. Just respond here and we'll get it locked in!`
 
         try {
           await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
