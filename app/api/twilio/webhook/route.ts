@@ -19,8 +19,9 @@ export async function POST(request: NextRequest) {
   const payload = Object.fromEntries(params.entries())
 
   const twilioSignature = request.headers.get('x-twilio-signature') ?? ''
-  const { host, protocol } = new URL(request.url)
-  const url = `${protocol}//${host}/api/twilio/webhook`
+  const host = request.headers.get('x-forwarded-host') || new URL(request.url).host
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const url = `${proto}://${host}/api/twilio/webhook`
   const isValid = validateRequest(
     process.env.TWILIO_AUTH_TOKEN!,
     twilioSignature,
