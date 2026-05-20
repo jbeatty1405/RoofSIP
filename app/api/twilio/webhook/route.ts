@@ -198,6 +198,13 @@ export async function POST(request: NextRequest) {
         await twilio.messages.create({ body: callMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
         await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: callMsg, direction: 'outbound', status: 'sent' })
 
+        await supabase.from('notifications').insert({
+          roofer_id: homeowner.roofer_id,
+          homeowner_id: homeowner.id,
+          type: 'call_needed',
+          message: `${homeowner.name} is available ${availability} — call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
+        })
+
         if (profile?.pm_email) {
           try {
             await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability })
