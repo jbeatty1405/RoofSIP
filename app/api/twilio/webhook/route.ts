@@ -5,6 +5,14 @@ import { handleHoReply } from '@/app/_lib/ai-sms'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
+async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string) {
+  try {
+    await twilio.messages.create({ body, from: process.env.TWILIO_PHONE_NUMBER!, to })
+  } catch (err) {
+    console.error(`SMS send failed to ${to}:`, err)
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const params = new URLSearchParams(body)
@@ -64,7 +72,7 @@ export async function POST(request: NextRequest) {
       reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. We set up storm alerts for your home — just reply to join, or text STOP to opt out.`
     }
 
-    await twilio.messages.create({ body: reply, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+    await sendSms(twilio, fromPhone, reply)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent' })
     return new NextResponse('', { status: 200 })
   }
@@ -108,7 +116,7 @@ export async function POST(request: NextRequest) {
   })
 
   // Send Hailey's AI-generated reply
-  await twilio.messages.create({ body: aiResponse, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+  await sendSms(twilio, fromPhone, aiResponse)
   await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: aiResponse, direction: 'outbound', status: 'sent' })
 
   // Act on intent
