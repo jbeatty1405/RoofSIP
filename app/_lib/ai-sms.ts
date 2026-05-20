@@ -84,12 +84,12 @@ export async function handleHoReply(opts: {
 Return ONLY valid JSON (no markdown):
 {"response":"<your reply, under 140 chars, natural and conversational>","intent":"<confirmed|declined|gave_time|gave_availability|unclear>","time":"<ISO 8601 if gave_time, else null>","availability":"<plain english window if gave_availability, else null>"}
 
-Intent rules:
-- confirmed: they agreed to a specific time
-- declined: they don't want an inspection at all
-- gave_time: they named a specific date/time (extract as ISO 8601)
-- gave_availability: they gave a general window (mornings, weekends, after 3pm, etc.)
-- unclear: still can't determine — write a friendly one-line clarification`,
+Intent rules (pick the BEST match — do not over-classify as unclear):
+- confirmed: they said yes, sounds good, sure, that works, or otherwise agreed to move forward — even without a specific time
+- declined: they explicitly do not want an inspection ("not interested", "no thanks", "I'm good")
+- gave_time: they named a specific date AND/OR time (e.g. "Thursday at 2pm", "next Tuesday morning") — set time to ISO 8601
+- gave_availability: they described a general window with no specific date (e.g. "afternoons", "weekday mornings", "after 3pm on weekdays", "usually home in the afternoons") — set availability to a short plain-english phrase
+- unclear: you genuinely cannot tell what they want even after reading the full context — rare, only use this when nothing else fits`,
       messages: [{ role: 'user', content: `<homeowner_message>\n${hoMessage}\n</homeowner_message>` }],
     })
     text = raw.content[0].type === 'text' ? raw.content[0].text.trim() : ''
@@ -104,8 +104,9 @@ Intent rules:
 
     if (parsed.intent === 'confirmed') return { response, intent: { type: 'confirmed' } }
     if (parsed.intent === 'declined') return { response, intent: { type: 'declined' } }
-    if (parsed.intent === 'gave_availability' && parsed.availability) {
-      return { response, intent: { type: 'gave_availability', availability: parsed.availability } }
+    if (parsed.intent === 'gave_availability') {
+      const availability = parsed.availability || hoMessage.slice(0, 80)
+      return { response, intent: { type: 'gave_availability', availability } }
     }
     if (parsed.intent === 'gave_time' && parsed.time) {
       const d = new Date(parsed.time)
