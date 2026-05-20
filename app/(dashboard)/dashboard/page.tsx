@@ -34,11 +34,19 @@ export default async function DashboardHome() {
     .eq('roofer_id', user!.id)
     .gte('created_at', monthStart.toISOString())
 
-  const { count: unreadNotifications } = await supabase
+  const { count: confirmedCount } = await supabase
     .from('notifications')
     .select('*', { count: 'exact', head: true })
     .eq('roofer_id', user!.id)
     .eq('read', false)
+    .eq('type', 'hot_lead')
+
+  const { count: callsCount } = await supabase
+    .from('notifications')
+    .select('*', { count: 'exact', head: true })
+    .eq('roofer_id', user!.id)
+    .eq('read', false)
+    .neq('type', 'hot_lead')
 
   const { data: recentBookings } = await supabase
     .from('bookings')
@@ -85,7 +93,7 @@ export default async function DashboardHome() {
         {profile?.company_name && <p className="text-zinc-500 text-sm mt-1">{profile.company_name}</p>}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <Link href="/homeowners" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-sky-800 hover:shadow-lg hover:shadow-sky-950/50 transition-all group">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-zinc-500">Homeowners</p>
@@ -110,17 +118,30 @@ export default async function DashboardHome() {
           <p className="text-3xl font-bold text-white">{inspectionsThisMonth ?? 0}</p>
         </div>
 
-        <Link href="/notifications" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-red-900 transition-all group">
+        <Link href="/notifications" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-green-900 transition-all group">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm text-zinc-500">Action needed</p>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${(unreadNotifications ?? 0) > 0 ? 'bg-red-500/10' : 'bg-zinc-800'}`}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={(unreadNotifications ?? 0) > 0 ? '#f87171' : '#52525b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            <p className="text-sm text-zinc-500">Confirmed appts</p>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${(confirmedCount ?? 0) > 0 ? 'bg-green-500/10' : 'bg-zinc-800'}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={(confirmedCount ?? 0) > 0 ? '#4ade80' : '#52525b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
               </svg>
             </div>
           </div>
-          <p className="text-3xl font-bold text-white">{unreadNotifications ?? 0}</p>
-          {(unreadNotifications ?? 0) > 0 && <p className="text-xs text-red-400 mt-1">homeowners to call</p>}
+          <p className="text-3xl font-bold text-white">{confirmedCount ?? 0}</p>
+          {(confirmedCount ?? 0) > 0 && <p className="text-xs text-green-400 mt-1">ready to go</p>}
+        </Link>
+
+        <Link href="/notifications" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-amber-900 transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm text-zinc-500">Calls needed</p>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${(callsCount ?? 0) > 0 ? 'bg-amber-500/10' : 'bg-zinc-800'}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={(callsCount ?? 0) > 0 ? '#fbbf24' : '#52525b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.45 2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.64a16 16 0 0 0 6 6l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+              </svg>
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-white">{callsCount ?? 0}</p>
+          {(callsCount ?? 0) > 0 && <p className="text-xs text-amber-400 mt-1">set the appt</p>}
         </Link>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
