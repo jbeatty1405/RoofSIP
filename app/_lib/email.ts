@@ -54,6 +54,43 @@ export async function sendPmConfirmationEmail({
   })
 }
 
+export async function sendPmCallEmail({
+  to,
+  pmName,
+  homeownerName,
+  homeownerPhone,
+  homeownerAddress,
+  availability,
+}: {
+  to: string
+  pmName: string
+  homeownerName: string
+  homeownerPhone: string
+  homeownerAddress: string
+  availability: string
+}) {
+  await transporter.sendMail({
+    from: `Hailey via RoofSIP <${process.env.GMAIL_USER}>`,
+    to,
+    subject: `Call needed — ${homeownerName}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+        <h2 style="margin:0 0 4px;font-size:18px;color:#111">Homeowner needs a quick call</h2>
+        <p style="margin:0 0 24px;color:#666;font-size:14px">They're interested but gave a general window instead of a specific time.</p>
+
+        <div style="background:#f4f4f5;border-radius:10px;padding:16px;margin-bottom:24px">
+          <p style="margin:0 0 6px;font-size:14px"><strong>${homeownerName}</strong></p>
+          <p style="margin:0 0 4px;font-size:13px;color:#555">${homeownerAddress}</p>
+          <p style="margin:0;font-size:13px;color:#555">${homeownerPhone}</p>
+        </div>
+
+        <p style="margin:0 0 16px;font-size:14px;color:#333">They said they're available: <strong>${availability}</strong></p>
+        <p style="margin:0;font-size:13px;color:#555">Give them a call to lock in the exact time. I've let them know you'll be reaching out.</p>
+      </div>
+    `,
+  })
+}
+
 export async function sendPmTimeCheckEmail({
   to,
   pmName,
