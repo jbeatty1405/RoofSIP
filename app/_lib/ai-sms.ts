@@ -59,6 +59,16 @@ export type HoReplyIntent =
   | { type: 'gave_availability'; availability: string }
   | { type: 'unclear' }
 
+const CLEAR_YES = ['yes', 'yep', 'yeah', 'yea', 'sure', 'ok', 'okay', 'sounds good', 'that works', 'works for me', 'perfect', 'great', 'absolutely', 'definitely', 'of course', 'for sure', 'sounds great', 'that sounds good', 'yes please', 'yes that works', 'yes sounds good', 'yes, sounds good', 'yes that sounds good']
+const CLEAR_NO = ['no', 'nope', 'not interested', 'no thanks', 'no thank you', 'pass', 'dont want', "don't want", 'not right now', 'not at this time']
+
+function preClassifyIntent(msg: string): 'confirmed' | 'declined' | null {
+  const lower = msg.toLowerCase().trim().replace(/[.!]+$/, '')
+  if (CLEAR_YES.includes(lower)) return 'confirmed'
+  if (CLEAR_NO.includes(lower)) return 'declined'
+  return null
+}
+
 export async function handleHoReply(opts: {
   hoMessage: string
   lastHaileyMessage: string
@@ -73,6 +83,8 @@ export async function handleHoReply(opts: {
     : 'No specific time has been proposed yet.'
 
   const fallbackResponse = `Got it! ${pmFirstName} will reach out to confirm a time that works for you.`
+
+  const preIntent = preClassifyIntent(hoMessage)
 
   let text = ''
   try {
@@ -102,6 +114,10 @@ Intent rules (pick the BEST match — do not over-classify as unclear):
     const parsed = JSON.parse(text)
     const response: string = parsed.response ?? fallbackResponse
 
+    // Pre-classifier overrides AI for unambiguous short messages
+    if (preIntent === 'confirmed') return { response, intent: { type: 'confirmed' } }
+    if (preIntent === 'declined') return { response, intent: { type: 'declined' } }
+
     if (parsed.intent === 'confirmed') return { response, intent: { type: 'confirmed' } }
     if (parsed.intent === 'declined') return { response, intent: { type: 'declined' } }
     if (parsed.intent === 'gave_availability') {
@@ -117,7 +133,7 @@ Intent rules (pick the BEST match — do not over-classify as unclear):
     }
     return { response, intent: { type: 'unclear' } }
   } catch {
-    return { response: fallbackResponse, intent: { type: 'unclear' } }
+    return { response: fallbackResponse, intent: { type: preIntent ?? 'unclear' } }
   }
 }
 
