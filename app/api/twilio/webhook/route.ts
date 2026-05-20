@@ -1,8 +1,7 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
-import { parseHoTimeReply, extractHoAvailability } from '@/app/_lib/ai-sms'
-import { getMarketForZip, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
+import { handleHoReply } from '@/app/_lib/ai-sms'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
@@ -30,7 +29,6 @@ export async function POST(request: NextRequest) {
   const supabase = await createServiceClient()
   const twilio = getTwilioClient()
 
-  // Homeowner reply
   const { data: homeowner } = await supabase
     .from('homeowners')
     .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
@@ -49,41 +47,31 @@ export async function POST(request: NextRequest) {
     status: 'received',
   })
 
-  // Handle YES/STOP to the intro text (homeowner hasn't confirmed yet)
+  // Pre-opt-in: handle consent flow with simple keywords
   if (!homeowner.sms_confirmed) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
     const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
 
+    let reply: string
     if (isOptIn) {
-      await supabase
-        .from('homeowners')
-        .update({ sms_confirmed: true })
-        .eq('id', homeowner.id)
-
-      const msg = `You're in! I'll keep an eye on things and reach out if we detect any major weather near your house. Talk soon!`
-      await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-      await supabase.from('sms_logs').insert({
-        roofer_id: homeowner.roofer_id,
-        homeowner_id: homeowner.id,
-        message: msg,
-        direction: 'outbound',
-        status: 'sent',
-      })
+      await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
+      reply = `You're in! I'll keep an eye on things and reach out if we detect any major weather near your house. Talk soon!`
     } else if (isOptOut) {
       await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
-      const msg = `Got it! We won't reach out again. Take care.`
-      await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+      reply = `Got it! We won't reach out again. Take care.`
+    } else {
+      const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
+      reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. We set up storm alerts for your home — just reply to join, or text STOP to opt out.`
     }
 
+    await twilio.messages.create({ body: reply, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent' })
     return new NextResponse('', { status: 200 })
   }
 
-  // Handle STOP from consented homeowners
+  // STOP always wins — TCPA compliance
   if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
-    await supabase
-      .from('homeowners')
-      .update({ tcpa_consent: false })
-      .eq('id', homeowner.id)
+    await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
     return new NextResponse('', { status: 200 })
   }
 
@@ -91,6 +79,19 @@ export async function POST(request: NextRequest) {
   const pmName = profile?.pm_name ?? 'your inspector'
   const pmFirst = pmName.split(' ')[0]
   const pmPhone = profile?.pm_phone
+  const hoFirst = homeowner.name.split(' ')[0]
+
+  // Get last outbound message for AI context
+  const { data: lastOutbound } = await supabase
+    .from('sms_logs')
+    .select('message')
+    .eq('homeowner_id', homeowner.id)
+    .eq('direction', 'outbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const lastHaileyMessage = lastOutbound?.message ?? `I reached out about storm activity near your home.`
 
   const { data: pending } = await supabase
     .from('pending_bookings')
@@ -98,20 +99,23 @@ export async function POST(request: NextRequest) {
     .eq('homeowner_id', homeowner.id)
     .maybeSingle()
 
-  const isYes = messageLower === 'yes' || messageLower === 'y'
-  const isNo = /^(no|nope|n|no thanks|doesn'?t work|can'?t|won'?t|not available|busy)\b/i.test(messageLower) && messageBody.length < 60
+  const { response: aiResponse, intent } = await handleHoReply({
+    hoMessage: messageBody,
+    lastHaileyMessage,
+    proposedSlot: pending?.proposed_slot ?? undefined,
+    pmFirstName: pmFirst,
+    hoFirstName: hoFirst,
+  })
 
-  // HO confirmed the proposed time
-  if (isYes && pending?.status === 'awaiting_ho_reply') {
-    const proposedStr = pending.proposed_slot
+  // Send Hailey's AI-generated reply
+  await twilio.messages.create({ body: aiResponse, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+  await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: aiResponse, direction: 'outbound', status: 'sent' })
+
+  // Act on intent
+  if (intent.type === 'confirmed') {
+    const proposedStr = pending?.proposed_slot
       ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : 'the proposed time'
-
-    const confirmMsg = pmPhone
-      ? `You're confirmed, ${homeowner.name.split(' ')[0]}! ${pmFirst} will reach out within the hour to finalize. Their number is ${pmPhone}.`
-      : `You're confirmed, ${homeowner.name.split(' ')[0]}! ${pmFirst} will reach out within the hour to finalize.`
-    await twilio.messages.create({ body: confirmMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: confirmMsg, direction: 'outbound', status: 'sent' })
+      : 'a time'
 
     await supabase.from('notifications').insert({
       roofer_id: homeowner.roofer_id,
@@ -123,140 +127,82 @@ export async function POST(request: NextRequest) {
     if (profile?.pm_email) {
       try {
         await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: '' })
-      } catch (err) { console.error('PM email failed:', err) }
+      } catch (err) { console.error('PM confirmation email failed:', err) }
     }
 
-    await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
-    return new NextResponse('', { status: 200 })
+    if (pending) await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
   }
 
-  // HO said YES but no pending booking (replied yes to "Mike will reach out" text)
-  if (isYes && !pending) {
+  else if (intent.type === 'declined') {
+    if (!pending) {
+      const pauseUntil = new Date()
+      pauseUntil.setDate(pauseUntil.getDate() + 30)
+      await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
+    }
+    // If pending exists, AI already asked for a better time — leave status as-is
+  }
+
+  else if (intent.type === 'gave_time') {
+    const timeStr = intent.parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
     await supabase.from('notifications').insert({
       roofer_id: homeowner.roofer_id,
       homeowner_id: homeowner.id,
-      type: 'hot_lead',
-      message: `${homeowner.name} said YES — call them at ${homeowner.phone} (${homeowner.address}).`,
+      type: 'call_needed',
+      message: `${homeowner.name} requested ${timeStr} — call to confirm. ${homeowner.phone} · ${homeowner.address}`,
     })
 
     if (profile?.pm_email) {
       try {
-        await sendPmCallEmail({
-          to: profile.pm_email,
-          pmName,
-          homeownerName: homeowner.name,
-          homeownerPhone: homeowner.phone,
-          homeownerAddress: homeowner.address,
-          availability: 'ready now — they replied YES',
-        })
-      } catch (err) { console.error('PM hot lead email failed:', err) }
+        await sendPmTimeCheckEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: timeStr })
+      } catch (err) { console.error('PM time-check email failed:', err) }
     }
 
-    return new NextResponse('', { status: 200 })
+    if (pending) {
+      await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: intent.parsedTime.toISOString() }).eq('id', pending.id)
+    }
   }
 
-  // HO declined with no active booking (replied no to "Mike will reach out" text) — pause for 30 days
-  if (isNo && !pending) {
-    const pauseUntil = new Date()
-    pauseUntil.setDate(pauseUntil.getDate() + 30)
-    await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
-    const closeMsg = `No problem at all! If anything changes down the road, we're here.`
-    await twilio.messages.create({ body: closeMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: closeMsg, direction: 'outbound', status: 'sent' })
-    return new NextResponse('', { status: 200 })
+  else if (intent.type === 'gave_availability') {
+    await supabase.from('notifications').insert({
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      type: 'call_needed',
+      message: `${homeowner.name} is available ${intent.availability} — call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
+    })
+
+    if (profile?.pm_email) {
+      try {
+        await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: intent.availability })
+      } catch (err) { console.error('PM call email failed:', err) }
+    }
+
+    if (pending) await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
   }
 
-  // HO declined proposed time — ask for their best time
-  if (isNo && pending?.status === 'awaiting_ho_reply') {
-    const noMsg = `No problem! When's the best time for you?`
-    await twilio.messages.create({ body: noMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: noMsg, direction: 'outbound', status: 'sent' })
-    await supabase.from('pending_bookings').update({ status: 'awaiting_ho_time' }).eq('id', pending.id)
-    return new NextResponse('', { status: 200 })
-  }
+  else if (intent.type === 'unclear') {
+    const alreadyTried = pending?.status === 'awaiting_ho_clarification'
+      || pending?.status === 'awaiting_ho_time'
 
-  // Ambiguous reply to storm SMS (not YES/NO, pending awaiting_ho_reply)
-  // If PM has a market with open slots, re-offer next available. Otherwise PM calls.
-  if (pending?.status === 'awaiting_ho_reply') {
-    const market = await getMarketForZip(supabase, homeowner.zip_code)
-    if (market) {
-      const slot = await getNextAvailableSlot(supabase, market, homeowner.roofer_id)
-      const slotStr = formatSlot(slot)
-      const reofferMsg = `No worries! ${pmFirst}'s next open spot is ${slotStr} — does that work for you? Just let me know!`
-      await twilio.messages.create({ body: reofferMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reofferMsg, direction: 'outbound', status: 'sent' })
-      await supabase.from('pending_bookings').update({ proposed_slot: slot.toISOString() }).eq('id', pending.id)
-    } else {
-      const reachOutMsg = `No worries! ${pmFirst} will reach out to confirm what time works best for both your schedules.`
-      await twilio.messages.create({ body: reachOutMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reachOutMsg, direction: 'outbound', status: 'sent' })
+    if (alreadyTried) {
+      // Second unclear — hand off to PM
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,
         type: 'call_needed',
-        message: `${homeowner.name} sent an ambiguous reply — reach out to confirm a time. ${homeowner.phone} · ${homeowner.address}`,
+        message: `${homeowner.name} couldn't confirm over text — give them a call. ${homeowner.phone} · ${homeowner.address}`,
       })
+
       if (profile?.pm_email) {
         try {
-          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — they need help picking a time' })
+          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — needs a call to confirm' })
         } catch (err) { console.error('PM call email failed:', err) }
       }
+
+      if (pending) await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
+    } else if (pending) {
+      await supabase.from('pending_bookings').update({ status: 'awaiting_ho_clarification' }).eq('id', pending.id)
     }
-    return new NextResponse('', { status: 200 })
-  }
-
-  // HO gave their preferred time
-  if (pending?.status === 'awaiting_ho_time') {
-    const parsedTime = await parseHoTimeReply(messageBody)
-    if (parsedTime) {
-      const timeStr = parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-
-      const checkMsg = `Got it! ${pmFirst} will reach out to confirm.`
-      await twilio.messages.create({ body: checkMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: checkMsg, direction: 'outbound', status: 'sent' })
-
-      await supabase.from('notifications').insert({
-        roofer_id: homeowner.roofer_id,
-        homeowner_id: homeowner.id,
-        type: 'call_needed',
-        message: `${homeowner.name} requested ${timeStr} — call to confirm. ${homeowner.phone} · ${homeowner.address}`,
-      })
-
-      if (profile?.pm_email) {
-        try {
-          await sendPmTimeCheckEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: timeStr })
-        } catch (err) { console.error('PM time-check email failed:', err) }
-      }
-
-      await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: parsedTime.toISOString() }).eq('id', pending.id)
-    } else {
-      const availability = await extractHoAvailability(messageBody)
-      if (availability) {
-        const callMsg = `Got it! ${pmFirst} will give you a call to lock in a time.`
-        await twilio.messages.create({ body: callMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-        await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: callMsg, direction: 'outbound', status: 'sent' })
-
-        await supabase.from('notifications').insert({
-          roofer_id: homeowner.roofer_id,
-          homeowner_id: homeowner.id,
-          type: 'call_needed',
-          message: `${homeowner.name} is available ${availability} — call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
-        })
-
-        if (profile?.pm_email) {
-          try {
-            await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability })
-          } catch (err) { console.error('PM call email failed:', err) }
-        }
-
-        await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
-      } else {
-        const clarifyMsg = `What day and time works best for you? For example, "Thursday at 10am" or "Saturday morning."`
-        await twilio.messages.create({ body: clarifyMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
-        await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: clarifyMsg, direction: 'outbound', status: 'sent' })
-      }
-    }
-    return new NextResponse('', { status: 200 })
   }
 
   return new NextResponse('', { status: 200 })
