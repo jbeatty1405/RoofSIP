@@ -48,18 +48,18 @@ export async function POST(request: NextRequest) {
     status: 'received',
   })
 
-  // Handle opt-in flow (homeowner hasn't consented yet)
-  if (!homeowner.tcpa_consent) {
+  // Handle YES/STOP to the intro text (homeowner hasn't confirmed yet)
+  if (!homeowner.sms_confirmed) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
     const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
 
     if (isOptIn) {
       await supabase
         .from('homeowners')
-        .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString() })
+        .update({ sms_confirmed: true })
         .eq('id', homeowner.id)
 
-      const msg = `You're in! This is Hailey. I'll keep an eye on storm activity near your home and reach out when anything hits. Reply STOP anytime to opt out.`
+      const msg = `You're in! I'll keep an eye on things and reach out if we detect any major weather near your house. Talk soon!`
       await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
       await supabase.from('sms_logs').insert({
         roofer_id: homeowner.roofer_id,
@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
         status: 'sent',
       })
     } else if (isOptOut) {
+      await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
       const msg = `Got it! We won't reach out again. Take care.`
       await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
     }

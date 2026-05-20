@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getAlertsForZip } from '@/app/_lib/noaa'
-import { getTwilioClient, buildWeatherSms } from '@/app/_lib/twilio'
+import { getTwilioClient, buildWeatherSms, buildIntroSms } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketForZip, getNextAvailableSlot } from '@/app/_lib/markets'
@@ -46,11 +46,12 @@ export async function POST(request: NextRequest) {
   const supabase = await createServiceClient()
   const twilio = getTwilioClient()
 
-  // Send opt-in texts to homeowners added during quiet hours who haven't been texted yet
+  // Send intro texts to homeowners added during quiet hours who haven't been texted yet
   const { data: uncontacted } = await supabase
     .from('homeowners')
     .select('*, profiles(pm_name, company_name)')
-    .eq('tcpa_consent', false)
+    .eq('tcpa_consent', true)
+    .eq('sms_confirmed', false)
 
   if (uncontacted?.length) {
     const { data: existingLogs } = await supabase
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
       const firstName = h.name.split(' ')[0]
       const pmName = profile.pm_name ?? 'Your contractor'
       const company = profile.company_name ? ` from ${profile.company_name}` : ''
-      const msg = `Hi ${firstName}! ${pmName}${company} added you to receive free storm alerts for your roof. When storm activity hits your area, we'll send a heads up and offer a free inspection. Reply YES to opt in or STOP to skip.`
+      const msg = buildIntroSms(pmName, h.name, profile.company_name ?? undefined)
       try {
         await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
         await supabase.from('sms_logs').insert({
@@ -92,6 +93,7 @@ export async function POST(request: NextRequest) {
     .from('homeowners')
     .select('id, name, phone, roofer_id, profiles(subscription_status)')
     .eq('tcpa_consent', true)
+    .eq('sms_confirmed', true)
 
   if ((optedInHomeowners ?? []).length > 0) {
     const optedInIds = (optedInHomeowners ?? []).map((h: any) => h.id)
@@ -150,7 +152,7 @@ export async function POST(request: NextRequest) {
         if (hasFollowUp) continue
 
         const firstName = h.name.split(' ')[0]
-        const followUpMsg = `Hey ${firstName}, just following up — did you see our message about storm activity near your home? A free roof inspection could catch damage early before it gets costly. Reply YES if you'd like us to take a look.`
+        const followUpMsg = `Hey ${firstName}, just following up on our last message about the weather near your home — still happy to get your roof checked out for free if you're interested.`
 
         try {
           await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
@@ -173,6 +175,7 @@ export async function POST(request: NextRequest) {
     .from('homeowners')
     .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
     .eq('tcpa_consent', true)
+    .eq('sms_confirmed', true)
     .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
 
   if (!homeowners?.length) return NextResponse.json({ sent: 0 })
