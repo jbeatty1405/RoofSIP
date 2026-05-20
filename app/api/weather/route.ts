@@ -164,6 +164,12 @@ export async function POST(request: NextRequest) {
             direction: 'outbound',
             status: 'sent',
           })
+          await supabase.from('notifications').insert({
+            roofer_id: h.roofer_id,
+            homeowner_id: h.id,
+            type: 'call_needed',
+            message: `Storm alert + follow-up sent to ${h.name} at ${h.address} — no response yet. Give them a call to book their free inspection.`,
+          })
         } catch (err) {
           console.error(`Follow-up SMS failed to ${h.phone}:`, err)
         }
