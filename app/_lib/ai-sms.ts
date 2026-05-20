@@ -61,11 +61,16 @@ export type HoReplyIntent =
 
 const CLEAR_YES = ['yes', 'yep', 'yeah', 'yea', 'sure', 'ok', 'okay', 'sounds good', 'that works', 'works for me', 'perfect', 'great', 'absolutely', 'definitely', 'of course', 'for sure', 'sounds great', 'that sounds good', 'yes please', 'yes that works', 'yes sounds good', 'yes, sounds good', 'yes that sounds good']
 const CLEAR_NO = ['no', 'nope', 'not interested', 'no thanks', 'no thank you', 'pass', 'dont want', "don't want", 'not right now', 'not at this time']
+const AVAIL_KEYWORDS = ['mornings', 'afternoons', 'evenings', 'weekdays', 'weekends', 'usually home', 'home in the morning', 'home in the afternoon', 'home in the evening', 'usually available', 'generally available', 'after work', 'before noon', 'home after', 'home before']
+const SPECIFIC_DATE_RE = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december|\d+\/\d+|\d+(th|st|nd|rd)\b)/i
 
-function preClassifyIntent(msg: string): 'confirmed' | 'declined' | null {
+function preClassifyIntent(msg: string): { type: 'confirmed' | 'declined' } | { type: 'gave_availability'; availability: string } | null {
   const lower = msg.toLowerCase().trim().replace(/[.!]+$/, '')
-  if (CLEAR_YES.includes(lower)) return 'confirmed'
-  if (CLEAR_NO.includes(lower)) return 'declined'
+  if (CLEAR_YES.includes(lower)) return { type: 'confirmed' }
+  if (CLEAR_NO.includes(lower)) return { type: 'declined' }
+  if (AVAIL_KEYWORDS.some(k => lower.includes(k)) && !SPECIFIC_DATE_RE.test(msg)) {
+    return { type: 'gave_availability', availability: msg.slice(0, 80) }
+  }
   return null
 }
 
@@ -114,9 +119,10 @@ Intent rules (pick the BEST match — do not over-classify as unclear):
     const parsed = JSON.parse(text)
     const response: string = parsed.response ?? fallbackResponse
 
-    // Pre-classifier overrides AI for unambiguous short messages
-    if (preIntent === 'confirmed') return { response, intent: { type: 'confirmed' } }
-    if (preIntent === 'declined') return { response, intent: { type: 'declined' } }
+    // Pre-classifier overrides AI for unambiguous messages
+    if (preIntent?.type === 'confirmed') return { response, intent: { type: 'confirmed' } }
+    if (preIntent?.type === 'declined') return { response, intent: { type: 'declined' } }
+    if (preIntent?.type === 'gave_availability') return { response, intent: preIntent }
 
     if (parsed.intent === 'confirmed') return { response, intent: { type: 'confirmed' } }
     if (parsed.intent === 'declined') return { response, intent: { type: 'declined' } }
@@ -133,7 +139,7 @@ Intent rules (pick the BEST match — do not over-classify as unclear):
     }
     return { response, intent: { type: 'unclear' } }
   } catch {
-    return { response: fallbackResponse, intent: { type: preIntent ?? 'unclear' } }
+    return { response: fallbackResponse, intent: preIntent ?? { type: 'unclear' } }
   }
 }
 
