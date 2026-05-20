@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { handleHoReply } from '@/app/_lib/ai-sms'
@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
   const messageBody = (payload.Body ?? '').trim()
   const messageLower = messageBody.toLowerCase()
 
-  const supabase = await createServiceClient()
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, ''),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, '')
+  )
   const twilio = getTwilioClient()
 
   const { data: homeowner } = await supabase
@@ -95,7 +98,7 @@ export async function POST(request: NextRequest) {
     .select('message')
     .eq('homeowner_id', homeowner.id)
     .eq('direction', 'outbound')
-    .order('created_at', { ascending: false })
+    .order('sent_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 

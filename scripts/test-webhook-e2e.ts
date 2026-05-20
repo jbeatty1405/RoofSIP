@@ -14,7 +14,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 
 import { createClient } from '@supabase/supabase-js'
 
-const WEBHOOK_URL = 'https://roof-sip.vercel.app/api/twilio/webhook'
+const WEBHOOK_URL = process.env.TEST_WEBHOOK_URL ?? 'http://localhost:3000/api/twilio/webhook'
 const TEST_PHONE = '+14805550199'
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN!
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -88,16 +88,16 @@ async function getLatestNotification(homeownerId: string) {
 }
 
 async function getLatestOutbound(homeownerId: string) {
-  const { data } = await supabase.from('sms_logs').select('*').eq('homeowner_id', homeownerId).eq('direction', 'outbound').order('created_at', { ascending: false }).limit(1).maybeSingle()
+  const { data } = await supabase.from('sms_logs').select('*').eq('homeowner_id', homeownerId).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle()
   return data
 }
 
 // --- Setup: find a real roofer_id to attach the test homeowner to ---
 
 async function getRooferIdAndProfile() {
-  const { data } = await supabase.from('profiles').select('id, pm_name, pm_email').limit(1).single()
-  if (!data) throw new Error('No profiles found in DB')
-  return data
+  const { data } = await supabase.from('homeowners').select('roofer_id').limit(1).single()
+  if (!data) throw new Error('No homeowners found in DB — add at least one real homeowner first')
+  return { id: data.roofer_id, pm_name: 'PM' }
 }
 
 async function createTestHomeowner(rooferID: string, opts: {
@@ -129,6 +129,7 @@ async function setPendingBooking(homeownerId: string, rooferID: string, status: 
       roofer_id: rooferID,
       status,
       proposed_slot: slot,
+      slots: [],
     })
   }
 }
