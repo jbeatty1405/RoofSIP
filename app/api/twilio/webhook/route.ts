@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
     if (market) {
       const slot = await getNextAvailableSlot(supabase, market, homeowner.roofer_id)
       const slotStr = formatSlot(slot)
-      const reofferMsg = `No worries! ${pmFirst}'s next open spot is ${slotStr} — does that work for you? Reply YES or let me know what works better.`
+      const reofferMsg = `No worries! ${pmFirst}'s next open spot is ${slotStr} — does that work for you? Just let me know!`
       await twilio.messages.create({ body: reofferMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reofferMsg, direction: 'outbound', status: 'sent' })
       await supabase.from('pending_bookings').update({ proposed_slot: slot.toISOString() }).eq('id', pending.id)

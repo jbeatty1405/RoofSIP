@@ -105,7 +105,7 @@ Details:
 Write ONE SMS that follows this structure exactly:
 1. "Hey ${firstName}, ${haleyIntro} here."
 2. "You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home."
-3. "${appointmentLine}, does that work for you? Reply YES."
+3. "${appointmentLine}, does that work for you? Just let me know!"
 
 Keep it natural and conversational. Do NOT use dashes of any kind. Do NOT include any intro like "Here is the message:" — just the message itself. Do NOT use quotation marks.`,
       },
@@ -113,5 +113,5 @@ Keep it natural and conversational. Do NOT use dashes of any kind. Do NOT includ
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hey ${firstName}, ${haleyIntro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${appointmentLine}, does that work for you? Reply YES.`
+  return text || `Hey ${firstName}, ${haleyIntro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${appointmentLine}, does that work for you? Just let me know!`
 }
