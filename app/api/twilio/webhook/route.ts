@@ -129,6 +129,31 @@ export async function POST(request: NextRequest) {
     return new NextResponse('', { status: 200 })
   }
 
+  // HO said YES but no pending booking (replied yes to "Mike will reach out" text)
+  if (isYes && !pending) {
+    await supabase.from('notifications').insert({
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      type: 'hot_lead',
+      message: `${homeowner.name} said YES — call them at ${homeowner.phone} (${homeowner.address}).`,
+    })
+
+    if (profile?.pm_email) {
+      try {
+        await sendPmCallEmail({
+          to: profile.pm_email,
+          pmName,
+          homeownerName: homeowner.name,
+          homeownerPhone: homeowner.phone,
+          homeownerAddress: homeowner.address,
+          availability: 'ready now — they replied YES',
+        })
+      } catch (err) { console.error('PM hot lead email failed:', err) }
+    }
+
+    return new NextResponse('', { status: 200 })
+  }
+
   // HO declined with no active booking (replied no to "Mike will reach out" text) — pause for 30 days
   if (isNo && !pending) {
     const pauseUntil = new Date()
