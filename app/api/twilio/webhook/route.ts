@@ -180,9 +180,16 @@ export async function POST(request: NextRequest) {
     if (parsedTime) {
       const timeStr = parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
-      const checkMsg = `Got it! I'll check with ${pmFirst} and get back to you.`
+      const checkMsg = `Got it! ${pmFirst} will reach out to confirm.`
       await twilio.messages.create({ body: checkMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: checkMsg, direction: 'outbound', status: 'sent' })
+
+      await supabase.from('notifications').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'call_needed',
+        message: `${homeowner.name} requested ${timeStr} — call to confirm. ${homeowner.phone} · ${homeowner.address}`,
+      })
 
       if (profile?.pm_email) {
         try {
