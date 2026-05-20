@@ -166,6 +166,10 @@ export async function POST(request: NextRequest) {
       }
 
       await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: parsedTime.toISOString() }).eq('id', pending.id)
+    } else {
+      const clarifyMsg = `What day and time works best for you? For example, "Thursday at 10am" or "Saturday morning."`
+      await twilio.messages.create({ body: clarifyMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: clarifyMsg, direction: 'outbound', status: 'sent' })
     }
     return new NextResponse('', { status: 200 })
   }
