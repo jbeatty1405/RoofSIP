@@ -22,7 +22,6 @@ export async function POST(request: NextRequest) {
   const host = request.headers.get('x-forwarded-host') || new URL(request.url).host
   const proto = request.headers.get('x-forwarded-proto') || 'https'
   const url = `${proto}://${host}/api/twilio/webhook`
-  console.log('[webhook] url:', url, 'sig:', twilioSignature.slice(0, 10), 'token_len:', process.env.TWILIO_AUTH_TOKEN?.length)
   const isValid = validateRequest(
     process.env.TWILIO_AUTH_TOKEN!,
     twilioSignature,
