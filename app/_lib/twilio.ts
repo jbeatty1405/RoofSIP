@@ -69,3 +69,11 @@ export function buildBookingConfirmationSms(pmName: string, homeownerName: strin
   const firstName = homeownerName.split(' ')[0]
   return `You're all set, ${firstName}! ${pmName} will stop by on ${dateStr} for your free roof inspection. See you then. Reply STOP to cancel.`
 }
+
+export function buildIntroSms(pmName: string, homeownerName: string, companyName?: string): string {
+  const firstName = homeownerName.split(' ')[0]
+  const pmFirst = pmName.split(' ')[0]
+  const cleaned = companyName ? cleanCompanyName(companyName) : ''
+  const from = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
+  return `Hey ${firstName}, ${from} here! ${pmFirst} just added you to receive free storm alerts for your roof. I'll text you if our system picks up storm activity near your home. Reply STOP anytime to opt out.`
+}

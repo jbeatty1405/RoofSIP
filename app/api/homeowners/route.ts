@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
-import { getTwilioClient } from '@/app/_lib/twilio'
+import { getTwilioClient, buildIntroSms } from '@/app/_lib/twilio'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { homeownerCreatesLast24h, HOMEOWNER_DAILY_LIMIT } from '@/app/_lib/rate-limit'
 import { isSameOrigin } from '@/app/_lib/csrf'
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const { name, address, zipCode, photoUrls, phone } = validation
+  const { name, address, zipCode, photoUrls, phone, tcpaConsent } = validation
 
   const recent = await homeownerCreatesLast24h(supabase, user.id)
   if (recent >= HOMEOWNER_DAILY_LIMIT) {
@@ -51,7 +51,8 @@ export async function POST(request: NextRequest) {
       phone,
       address,
       zip_code: zipCode,
-      tcpa_consent: false,
+      tcpa_consent: tcpaConsent,
+      tcpa_consent_at: tcpaConsent ? new Date().toISOString() : null,
       roof_photos: photoUrls,
     })
     .select()
@@ -66,34 +67,31 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  const firstName = name.split(' ')[0]
-  const pmName = profile?.pm_name ?? 'Your contractor'
-  const company = profile?.company_name ? ` from ${profile.company_name}` : ''
-
-  const optInMsg = `Hi ${firstName}! ${pmName}${company} added you to receive free storm alerts for your roof. When storm activity hits your area, we'll send a heads up and offer a free inspection. Reply YES to opt in or STOP to skip.`
-
-  if (isQuietHours()) {
-    return NextResponse.json({ id: homeowner.id, deferred: true })
+  if (!tcpaConsent || isQuietHours()) {
+    return NextResponse.json({ id: homeowner.id, deferred: !tcpaConsent ? false : true })
   }
+
+  const pmName = profile?.pm_name ?? 'Your contractor'
+  const introMsg = buildIntroSms(pmName, name, profile?.company_name ?? undefined)
 
   let smsError: string | null = null
   try {
     const twilio = getTwilioClient()
     await twilio.messages.create({
-      body: optInMsg,
+      body: introMsg,
       from: process.env.TWILIO_PHONE_NUMBER!,
       to: phone,
     })
     await service.from('sms_logs').insert({
       roofer_id: user.id,
       homeowner_id: homeowner.id,
-      message: optInMsg,
+      message: introMsg,
       direction: 'outbound',
       status: 'sent',
     })
   } catch (err) {
     smsError = err instanceof Error ? err.message : String(err)
-    console.error('Opt-in SMS failed:', smsError)
+    console.error('Intro SMS failed:', smsError)
   }
 
   return NextResponse.json({ id: homeowner.id, smsError })
@@ -105,6 +103,7 @@ type ValidHomeowner = {
   zipCode: string
   photoUrls: string[]
   phone: string
+  tcpaConsent: boolean
 }
 
 function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { error: string } {
@@ -112,6 +111,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
   const address = typeof body.address === 'string' ? body.address.trim() : ''
   const zipCode = typeof body.zipCode === 'string' ? body.zipCode.trim() : ''
   const rawPhone = typeof body.phone === 'string' ? body.phone : ''
+  const tcpaConsent = body.tcpaConsent === true
 
   if (!name) return { error: 'Name required' }
   if (name.length > MAX_NAME) return { error: 'Name too long' }
@@ -133,7 +133,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
     photoUrls.push(u)
   }
 
-  return { name, address, zipCode, photoUrls, phone }
+  return { name, address, zipCode, photoUrls, phone, tcpaConsent }
 }
 
 function normalizePhone(raw: string): string {

@@ -8,6 +8,7 @@ import Link from 'next/link'
 export default function NewHomeownerPage() {
   const router = useRouter()
   const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
+  const [tcpaConsent, setTcpaConsent] = useState(false)
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -45,7 +46,7 @@ export default function NewHomeownerPage() {
     const res = await fetch('/api/homeowners', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, photoUrls }),
+      body: JSON.stringify({ ...form, photoUrls, tcpaConsent }),
     })
 
     const data = await res.json()
@@ -69,7 +70,7 @@ export default function NewHomeownerPage() {
         <Link href="/homeowners" className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">← Homeowners</Link>
       </div>
       <h1 className="text-2xl font-bold text-white mb-2">Add homeowner</h1>
-      <p className="text-sm text-zinc-500 mb-8">We'll text them to confirm they want storm alerts — no checkbox needed.</p>
+      <p className="text-sm text-zinc-500 mb-8">Add a homeowner to monitor their roof for storm activity.</p>
 
       <form onSubmit={handleSubmit} className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 flex flex-col gap-5">
         <div>
@@ -106,6 +107,18 @@ export default function NewHomeownerPage() {
             </div>
           )}
         </div>
+
+        <label className="flex gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={tcpaConsent}
+            onChange={e => setTcpaConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-sky-500 focus:ring-sky-500 focus:ring-offset-zinc-900 shrink-0"
+          />
+          <span className="text-xs text-zinc-400 leading-relaxed">
+            I confirm this homeowner has given me express written consent to receive automated text messages about storm alerts and free roof inspections from my company. They were told that msg &amp; data rates may apply and that they can reply <strong className="text-zinc-300">STOP</strong> at any time to opt out. <em>Checking this box will send an introductory text immediately.</em>
+          </span>
+        </label>
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3.5 py-2.5 text-sm text-red-400">{error}</div>}
 
