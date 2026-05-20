@@ -24,6 +24,16 @@ export async function getMarketForZip(
   return (data?.markets as unknown as Market) ?? null
 }
 
+export function formatSlot(slot: Date): string {
+  const now = new Date()
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const timeStr = slot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  if (slot.toDateString() === tomorrow.toDateString()) return `tomorrow at ${timeStr}`
+  const day = slot.toLocaleDateString('en-US', { weekday: 'long' })
+  return `${day} at ${timeStr}`
+}
+
 export async function getNextAvailableSlot(
   supabase: SupabaseClient,
   market: Market,

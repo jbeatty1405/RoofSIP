@@ -2,6 +2,7 @@ import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { parseHoTimeReply, extractHoAvailability } from '@/app/_lib/ai-sms'
+import { getMarketForZip, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
@@ -171,6 +172,36 @@ export async function POST(request: NextRequest) {
     await twilio.messages.create({ body: noMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: noMsg, direction: 'outbound', status: 'sent' })
     await supabase.from('pending_bookings').update({ status: 'awaiting_ho_time' }).eq('id', pending.id)
+    return new NextResponse('', { status: 200 })
+  }
+
+  // Ambiguous reply to storm SMS (not YES/NO, pending awaiting_ho_reply)
+  // If PM has a market with open slots, re-offer next available. Otherwise PM calls.
+  if (pending?.status === 'awaiting_ho_reply') {
+    const market = await getMarketForZip(supabase, homeowner.zip_code)
+    if (market) {
+      const slot = await getNextAvailableSlot(supabase, market, homeowner.roofer_id)
+      const slotStr = formatSlot(slot)
+      const reofferMsg = `No worries! ${pmFirst}'s next open spot is ${slotStr} — does that work for you? Reply YES or let me know what works better.`
+      await twilio.messages.create({ body: reofferMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reofferMsg, direction: 'outbound', status: 'sent' })
+      await supabase.from('pending_bookings').update({ proposed_slot: slot.toISOString() }).eq('id', pending.id)
+    } else {
+      const reachOutMsg = `No worries! ${pmFirst} will reach out to confirm what time works best for both your schedules.`
+      await twilio.messages.create({ body: reachOutMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: fromPhone })
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reachOutMsg, direction: 'outbound', status: 'sent' })
+      await supabase.from('notifications').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'call_needed',
+        message: `${homeowner.name} sent an ambiguous reply — reach out to confirm a time. ${homeowner.phone} · ${homeowner.address}`,
+      })
+      if (profile?.pm_email) {
+        try {
+          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — they need help picking a time' })
+        } catch (err) { console.error('PM call email failed:', err) }
+      }
+    }
     return new NextResponse('', { status: 200 })
   }
 

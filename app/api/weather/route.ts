@@ -3,19 +3,10 @@ import { getAlertsForZip } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
-import { getMarketForZip, getNextAvailableSlot } from '@/app/_lib/markets'
+import { getMarketForZip, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
 import { buildNoTimeWeatherSms } from '@/app/_lib/twilio'
 import { NextRequest, NextResponse } from 'next/server'
 
-function formatSlot(slot: Date): string {
-  const now = new Date()
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const timeStr = slot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  if (slot.toDateString() === tomorrow.toDateString()) return `tomorrow at ${timeStr}`
-  const day = slot.toLocaleDateString('en-US', { weekday: 'long' })
-  return `${day} at ${timeStr}`
-}
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
   return body.replace(/{{(\w+)}}/g, (_, key) => vars[key] ?? '')
