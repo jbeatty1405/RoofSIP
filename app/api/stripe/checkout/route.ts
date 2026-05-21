@@ -19,7 +19,10 @@ export async function POST(_request: NextRequest) {
     p_user_id: user.id,
     p_limit: CHECKOUT_RATE_LIMIT,
   })
-  if (rlError || (count as number) > CHECKOUT_RATE_LIMIT) {
+  if (rlError) {
+    console.error('[checkout] rate limit RPC error:', rlError)
+  }
+  if (!rlError && (count as number) > CHECKOUT_RATE_LIMIT) {
     return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
   }
 
