@@ -68,12 +68,12 @@
         {
           "title": "Auth",
           "file": "auth.spec.ts",
-          "line": 6,
+          "line": 10,
           "column": 6,
           "specs": [
             {
               "title": "login page renders",
-              "ok": false,
+              "ok": true,
               "tags": [],
               "tests": [
                 {
@@ -86,58 +86,125 @@
                     {
                       "workerIndex": 0,
                       "parallelIndex": 0,
-                      "status": "failed",
-                      "duration": 6733,
-                      "error": {
-                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByLabel(/email/i)\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByLabel(/email/i)\u001b[22m\n",
-                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByLabel(/email/i)\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByLabel(/email/i)\u001b[22m\n\n    at /Users/justinbeatty/roofsip/tests/e2e/auth.spec.ts:9:45",
-                        "location": {
-                          "file": "/Users/justinbeatty/roofsip/tests/e2e/auth.spec.ts",
-                          "column": 45,
-                          "line": 9
-                        },
-                        "snippet": "   7 |   test('login page renders', async ({ page }) => {\n   8 |     await page.goto('/login')\n>  9 |     await expect(page.getByLabel(/email/i)).toBeVisible()\n     |                                             ^\n  10 |     await expect(page.getByLabel(/password/i)).toBeVisible()\n  11 |     await expect(page.getByRole('button', { name: /sign in|log in/i })).toBeVisible()\n  12 |   })"
-                      },
-                      "errors": [
-                        {
-                          "location": {
-                            "file": "/Users/justinbeatty/roofsip/tests/e2e/auth.spec.ts",
-                            "column": 45,
-                            "line": 9
-                          },
-                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByLabel(/email/i)\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByLabel(/email/i)\u001b[22m\n\n\n   7 |   test('login page renders', async ({ page }) => {\n   8 |     await page.goto('/login')\n>  9 |     await expect(page.getByLabel(/email/i)).toBeVisible()\n     |                                             ^\n  10 |     await expect(page.getByLabel(/password/i)).toBeVisible()\n  11 |     await expect(page.getByRole('button', { name: /sign in|log in/i })).toBeVisible()\n  12 |   })\n    at /Users/justinbeatty/roofsip/tests/e2e/auth.spec.ts:9:45"
-                        }
-                      ],
+                      "status": "passed",
+                      "duration": 469,
+                      "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-05-05T19:45:49.873Z",
+                      "startTime": "2026-05-18T03:37:46.296Z",
                       "annotations": [],
-                      "attachments": [
-                        {
-                          "name": "screenshot",
-                          "contentType": "image/png",
-                          "path": "/Users/justinbeatty/roofsip/test-results/auth-Auth-login-page-renders-chromium/test-failed-1.png"
-                        },
-                        {
-                          "name": "error-context",
-                          "contentType": "text/markdown",
-                          "path": "/Users/justinbeatty/roofsip/test-results/auth-Auth-login-page-renders-chromium/error-context.md"
-                        }
-                      ],
-                      "errorLocation": {
-                        "file": "/Users/justinbeatty/roofsip/tests/e2e/auth.spec.ts",
-                        "column": 45,
-                        "line": 9
-                      }
+                      "attachments": []
                     }
                   ],
-                  "status": "unexpected"
+                  "status": "expected"
                 }
               ],
               "id": "d748ac400d08b85935ef-517bf4a4d81aa1db5a3d",
               "file": "auth.spec.ts",
-              "line": 7,
+              "line": 11,
+              "column": 7
+            },
+            {
+              "title": "signup page renders",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 502,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:46.860Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-ef07c40496793444a032",
+              "file": "auth.spec.ts",
+              "line": 19,
+              "column": 7
+            },
+            {
+              "title": "invalid login shows error",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 782,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:47.368Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-a48b322b6af1ab9290c1",
+              "file": "auth.spec.ts",
+              "line": 25,
+              "column": 7
+            },
+            {
+              "title": "valid login reaches dashboard",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2527,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:48.158Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "d748ac400d08b85935ef-4dbfb76921dfd0522fb8",
+              "file": "auth.spec.ts",
+              "line": 33,
               "column": 7
             },
             {
@@ -153,15 +220,15 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 1,
+                      "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 448,
+                      "duration": 536,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-05-05T19:45:56.984Z",
+                      "startTime": "2026-05-18T03:37:50.691Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -171,7 +238,7 @@
               ],
               "id": "d748ac400d08b85935ef-605fff5967115f804af0",
               "file": "auth.spec.ts",
-              "line": 39,
+              "line": 42,
               "column": 7
             },
             {
@@ -187,15 +254,15 @@
                   "projectName": "chromium",
                   "results": [
                     {
-                      "workerIndex": 1,
+                      "workerIndex": 0,
                       "parallelIndex": 0,
                       "status": "passed",
-                      "duration": 476,
+                      "duration": 402,
                       "errors": [],
                       "stdout": [],
                       "stderr": [],
                       "retry": 0,
-                      "startTime": "2026-05-05T19:45:57.504Z",
+                      "startTime": "2026-05-18T03:37:51.232Z",
                       "annotations": [],
                       "attachments": []
                     }
@@ -205,7 +272,528 @@
               ],
               "id": "d748ac400d08b85935ef-fe65ec9e53e9219e0e63",
               "file": "auth.spec.ts",
-              "line": 44,
+              "line": 47,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "dashboard.spec.ts",
+      "file": "dashboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Contractor Dashboard",
+          "file": "dashboard.spec.ts",
+          "line": 6,
+          "column": 6,
+          "specs": [
+            {
+              "title": "dashboard shows 4 stat cards",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1842,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:51.642Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-ee0656d84ddd82268598",
+              "file": "dashboard.spec.ts",
+              "line": 16,
+              "column": 7
+            },
+            {
+              "title": "nav links are visible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1656,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:53.491Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-7740121959eff798879d",
+              "file": "dashboard.spec.ts",
+              "line": 22,
+              "column": 7
+            },
+            {
+              "title": "settings page is reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3357,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:55.157Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-5e5ddce44ceffb4eb265",
+              "file": "dashboard.spec.ts",
+              "line": 28,
+              "column": 7
+            },
+            {
+              "title": "homeowners list page loads",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2289,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:37:58.520Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-1701c92942d108fc6cfe",
+              "file": "dashboard.spec.ts",
+              "line": 33,
+              "column": 7
+            },
+            {
+              "title": "sign out button works",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1958,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:00.815Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-78c9669cba0be2ddabd3",
+              "file": "dashboard.spec.ts",
+              "line": 40,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "homeowners.spec.ts",
+      "file": "homeowners.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Homeowners / SMS Opt-in",
+          "file": "homeowners.spec.ts",
+          "line": 6,
+          "column": 6,
+          "specs": [
+            {
+              "title": "add homeowner form renders required fields",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2844,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:02.780Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "7d5ccccc0b8db9a05ded-b66428e432393f6d1f3d",
+              "file": "homeowners.spec.ts",
+              "line": 16,
+              "column": 7
+            },
+            {
+              "title": "add homeowner form requires all fields",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2155,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:05.629Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "7d5ccccc0b8db9a05ded-de177ff167358a882c9d",
+              "file": "homeowners.spec.ts",
+              "line": 24,
+              "column": 7
+            },
+            {
+              "title": "consent page is publicly accessible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2165,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:07.790Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "7d5ccccc0b8db9a05ded-309c2edc6e0784f5f823",
+              "file": "homeowners.spec.ts",
+              "line": 31,
+              "column": 7
+            },
+            {
+              "title": "add homeowner with invalid phone shows error",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 2623,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:09.960Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "7d5ccccc0b8db9a05ded-9902de0cbd993c426218",
+              "file": "homeowners.spec.ts",
+              "line": 37,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "stripe.spec.ts",
+      "file": "stripe.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Stripe / Subscription",
+          "file": "stripe.spec.ts",
+          "line": 6,
+          "column": 6,
+          "specs": [
+            {
+              "title": "settings page shows subscription status",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 3538,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:12.591Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "3eb3b339e9cfa5820d26-8a1cd830943920073990",
+              "file": "stripe.spec.ts",
+              "line": 16,
+              "column": 7
+            },
+            {
+              "title": "subscribe button calls checkout endpoint and redirects to Stripe",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [
+                    {
+                      "type": "skip",
+                      "description": "User already subscribed — subscribe button not shown",
+                      "location": {
+                        "file": "/Users/justinbeatty/roofsip/tests/e2e/stripe.spec.ts",
+                        "line": 26,
+                        "column": 12
+                      }
+                    }
+                  ],
+                  "expectedStatus": "skipped",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "skipped",
+                      "duration": 2203,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:16.135Z",
+                      "annotations": [
+                        {
+                          "type": "skip",
+                          "description": "User already subscribed — subscribe button not shown",
+                          "location": {
+                            "file": "/Users/justinbeatty/roofsip/tests/e2e/stripe.spec.ts",
+                            "line": 26,
+                            "column": 12
+                          }
+                        }
+                      ],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "3eb3b339e9cfa5820d26-b97d30cc1fea61983510",
+              "file": "stripe.spec.ts",
+              "line": 22,
+              "column": 7
+            }
+          ]
+        },
+        {
+          "title": "Stripe / API guards (no auth)",
+          "file": "stripe.spec.ts",
+          "line": 40,
+          "column": 6,
+          "specs": [
+            {
+              "title": "/api/stripe/checkout returns 401 without auth",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 293,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:18.343Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "3eb3b339e9cfa5820d26-444d4a84773f837d5ccc",
+              "file": "stripe.spec.ts",
+              "line": 41,
+              "column": 7
+            },
+            {
+              "title": "/api/stripe/portal returns 401 without auth",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 354,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-18T03:38:18.640Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "3eb3b339e9cfa5820d26-f0ae4802bdd2df6b5570",
+              "file": "stripe.spec.ts",
+              "line": 46,
               "column": 7
             }
           ]
@@ -215,11 +803,11 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-05-05T19:45:49.591Z",
-    "duration": 8412.911,
-    "expected": 2,
-    "skipped": 0,
-    "unexpected": 1,
+    "startTime": "2026-05-18T03:37:45.970Z",
+    "duration": 33058.221,
+    "expected": 18,
+    "skipped": 1,
+    "unexpected": 0,
     "flaky": 0
   }
 }

@@ -15,7 +15,7 @@ export default function NewMarketPage() {
   const [name, setName] = useState('')
   const [autoSchedule, setAutoSchedule] = useState(true)
   const [workingDays, setWorkingDays] = useState([1, 2, 3, 4, 5])
-  const [startTime, setStartTime] = useState('08:00')
+  const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
   const [zipInput, setZipInput] = useState('')
   const [zips, setZips] = useState<string[]>([])
@@ -100,8 +100,9 @@ export default function NewMarketPage() {
             </div>
             <div className="flex gap-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-zinc-300 mb-1.5">Start time</label>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">First available time</label>
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={inputClass} />
+                <p className="text-xs text-zinc-500 mt-1">Default 9am — the time proposed to homeowners</p>
               </div>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">End time</label>

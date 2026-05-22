@@ -162,9 +162,10 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
             </div>
             <div className="flex gap-4">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-zinc-700 mb-1">Start time</label>
+                <label className="block text-sm font-medium text-zinc-700 mb-1">First available time</label>
                 <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
                   className="w-full px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                <p className="text-xs text-zinc-500 mt-1">The time proposed to homeowners (default 9am)</p>
               </div>
               <div className="flex-1">
                 <label className="block text-sm font-medium text-zinc-700 mb-1">End time</label>
