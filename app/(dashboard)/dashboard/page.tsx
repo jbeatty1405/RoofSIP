@@ -1,5 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import SubscribeBanner from './SubscribeBanner'
+import HaileyBanner from './HaileyBanner'
 import Link from 'next/link'
 
 export default async function DashboardHome() {
@@ -60,6 +61,8 @@ export default async function DashboardHome() {
           <span className="text-xs text-zinc-500">{lastAlertLabel}</span>
         </div>
       </div>
+
+      <HaileyBanner recentActivity={lastAlertLabel} />
 
       {/* Confirmed Appointments */}
       <div className="mb-6">
