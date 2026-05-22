@@ -99,16 +99,18 @@ export async function POST(request: NextRequest) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
     const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
 
-    let reply: string
     if (isOptIn) {
       await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
-      reply = `You're in! I'll keep an eye on things and reach out if we detect any major weather near your house. Talk soon!`
-    } else if (isOptOut) {
+      return new NextResponse('', { status: 200 })
+    }
+
+    let reply: string
+    if (isOptOut) {
       await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
       reply = `Got it! We won't reach out again. Take care.`
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
-      reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. We set up storm alerts for your home — just reply to join, or text STOP to opt out.`
+      reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. ${pmFirst} set you up for a free roof inspection if anything hits near your home. Reply YES or STOP to opt out.`
     }
 
     await sendSms(twilio, fromPhone, reply, toPhone)

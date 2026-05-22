@@ -50,8 +50,8 @@ export function buildWeatherSms(pmName: string, homeownerName: string, eventType
   const firstName = homeownerName.split(' ')[0]
   const { intro, appointment } = haileyIntroAndAppointment(pmName, companyName, proposedTime)
   const templates = [
-    `Hey ${firstName}, ${intro} here. Our system picked up some weather near your home — ${appointment}. Does that work for you?`,
-    `Hey ${firstName}, ${intro} here. We detected some weather activity near your house. ${appointment} — does that work?`,
+    `Hey ${firstName}, ${intro} here. We caught some weather near your home — ${appointment}. Does that work for you?`,
+    `Hey ${firstName}, ${intro} here. There's been some weather near your area. ${appointment} — does that work?`,
     `Hey ${firstName}, ${intro} here. Looks like there was some weather near your home. ${appointment}. Does that work for you?`,
   ]
   return templates[Math.floor(Math.random() * templates.length)]
@@ -62,7 +62,7 @@ export function buildNoTimeWeatherSms(pmName: string, homeownerName: string, com
   const pmFirst = pmName.split(' ')[0]
   const cleaned = companyName ? cleanCompanyName(companyName) : ''
   const intro = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
-  return `Hey ${firstName}, ${intro} here. Our system picked up some weather near your home — ${pmFirst} will be reaching out shortly to get your roof checked out.`
+  return `Hey ${firstName}, ${intro} here. We caught some weather near your home — ${pmFirst} will be in touch shortly to get your roof checked out.`
 }
 
 export function buildBookingConfirmationSms(pmName: string, homeownerName: string, dateStr: string): string {
@@ -75,5 +75,5 @@ export function buildIntroSms(pmName: string, homeownerName: string, companyName
   const pmFirst = pmName.split(' ')[0]
   const cleaned = companyName ? cleanCompanyName(companyName) : ''
   const from = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
-  return `Hey ${firstName}, ${from}! ${pmFirst} set you up for free storm alerts so we can get your roof inspected for free if anything hits near your house. Want a heads up when we detect major weather events in your area? Reply YES to join or STOP to skip.`
+  return `Hey ${firstName}, ${from}! ${pmFirst} set you up for a free roof inspection if anything hits near your home. Reply YES or STOP to opt out.`
 }
