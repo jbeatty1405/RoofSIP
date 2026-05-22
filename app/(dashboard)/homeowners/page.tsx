@@ -12,6 +12,17 @@ const STATUS_LABEL: Record<string, string> = {
   booked: 'Booked',
 }
 
+function StatusBadge({ h }: { h: any }) {
+  if (h.monitor_only) {
+    return <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-500/10 text-amber-400">Monitor only</span>
+  }
+  return (
+    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLOR[h.status] ?? STATUS_COLOR.pending}`}>
+      {STATUS_LABEL[h.status] ?? 'Pending'}
+    </span>
+  )
+}
+
 function Initials({ name }: { name: string }) {
   const parts = name.trim().split(' ')
   const initials = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2)
@@ -99,9 +110,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
                   <td className="px-5 py-3.5 text-sm text-zinc-400">{h.address}</td>
                   <td className="px-5 py-3.5 text-sm text-zinc-400">{(h as any).markets?.name ?? <span className="text-zinc-600">—</span>}</td>
                   <td className="px-5 py-3.5">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLOR[h.status] ?? STATUS_COLOR.pending}`}>
-                      {STATUS_LABEL[h.status] ?? 'Pending'}
-                    </span>
+                    <StatusBadge h={h} />
                   </td>
                   <td className="px-5 py-3.5 text-right">
                     <Link href={`/homeowners/${h.id}`} className="text-sm text-zinc-600 hover:text-zinc-200 font-medium transition-colors">View →</Link>
@@ -119,9 +128,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
                   <p className="text-sm font-medium text-zinc-200 truncate">{h.name}</p>
                   <p className="text-xs text-zinc-500 truncate">{h.address}</p>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[h.status] ?? STATUS_COLOR.pending}`}>
-                  {STATUS_LABEL[h.status] ?? 'Pending'}
-                </span>
+                <StatusBadge h={h} />
               </Link>
             ))}
           </div>

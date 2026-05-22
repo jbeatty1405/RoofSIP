@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId } = validation
+  const { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId, monitorOnly } = validation
 
   const recent = await homeownerCreatesLast24h(supabase, user.id)
   if (recent >= HOMEOWNER_DAILY_LIMIT) {
@@ -52,8 +52,9 @@ export async function POST(request: NextRequest) {
       address,
       zip_code: zipCode,
       market_id: marketId ?? null,
-      tcpa_consent: tcpaConsent,
-      tcpa_consent_at: tcpaConsent ? new Date().toISOString() : null,
+      monitor_only: monitorOnly,
+      tcpa_consent: monitorOnly ? false : tcpaConsent,
+      tcpa_consent_at: (!monitorOnly && tcpaConsent) ? new Date().toISOString() : null,
       roof_photos: photoUrls,
     })
     .select()
@@ -68,8 +69,8 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  if (!tcpaConsent || isQuietHours()) {
-    return NextResponse.json({ id: homeowner.id, deferred: !tcpaConsent ? false : true })
+  if (monitorOnly || !tcpaConsent || isQuietHours()) {
+    return NextResponse.json({ id: homeowner.id, deferred: (!monitorOnly && tcpaConsent && isQuietHours()) })
   }
 
   const pmName = profile?.pm_name ?? 'Your contractor'
@@ -106,6 +107,7 @@ type ValidHomeowner = {
   phone: string
   tcpaConsent: boolean
   marketId: string | null
+  monitorOnly: boolean
 }
 
 function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { error: string } {
@@ -136,7 +138,9 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
     photoUrls.push(u)
   }
 
-  return { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId }
+  const monitorOnly = body.monitorOnly === true
+
+  return { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId, monitorOnly }
 }
 
 function normalizePhone(raw: string): string {

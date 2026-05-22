@@ -10,6 +10,7 @@ export default function NewHomeownerPage() {
   const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
   const [marketId, setMarketId] = useState('')
   const [markets, setMarkets] = useState<{ id: string; name: string }[]>([])
+  const [monitorOnly, setMonitorOnly] = useState(false)
   const [tcpaConsent, setTcpaConsent] = useState(false)
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
@@ -59,7 +60,7 @@ export default function NewHomeownerPage() {
     const res = await fetch('/api/homeowners', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, photoUrls, tcpaConsent, marketId: marketId || null }),
+      body: JSON.stringify({ ...form, photoUrls, tcpaConsent: monitorOnly ? false : tcpaConsent, monitorOnly, marketId: marketId || null }),
     })
 
     const data = await res.json()
@@ -86,6 +87,23 @@ export default function NewHomeownerPage() {
       <p className="text-sm text-zinc-500 mb-8">Add a homeowner to monitor their roof for storm activity.</p>
 
       <form onSubmit={handleSubmit} className="bg-zinc-900 rounded-xl border border-zinc-800 p-6 flex flex-col gap-5">
+
+        {/* Monitor only toggle */}
+        <label className={`flex gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${monitorOnly ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-700 hover:border-zinc-600'}`}>
+          <input
+            type="checkbox"
+            checked={monitorOnly}
+            onChange={e => { setMonitorOnly(e.target.checked); if (e.target.checked) setTcpaConsent(false) }}
+            className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500 focus:ring-offset-zinc-900 shrink-0 accent-amber-500"
+          />
+          <div>
+            <p className="text-sm font-semibold text-zinc-200">Monitor only</p>
+            <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+              For contacts you haven't gotten consent from yet — old customers, notebook leads, etc. No texts will be sent. Hailey still monitors their area and notifies you when a storm hits so you can call them directly to schedule.
+            </p>
+          </div>
+        </label>
+
         <div>
           <label htmlFor="ho-name" className="block text-sm font-medium text-zinc-300 mb-1.5">Full name</label>
           <input id="ho-name" type="text" value={form.name} onChange={e => set('name', e.target.value)} required className={inputClass} placeholder="Sarah Johnson" />
@@ -129,17 +147,19 @@ export default function NewHomeownerPage() {
           )}
         </div>
 
-        <label className="flex gap-3 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={tcpaConsent}
-            onChange={e => setTcpaConsent(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-sky-500 focus:ring-sky-500 focus:ring-offset-zinc-900 shrink-0"
-          />
-          <span className="text-xs text-zinc-400 leading-relaxed">
-            I confirm this homeowner has given me express written consent to receive automated text messages about storm alerts and free roof inspections from my company. They were told that msg &amp; data rates may apply and that they can reply <strong className="text-zinc-300">STOP</strong> at any time to opt out. <em>Checking this box will send an introductory text immediately.</em>
-          </span>
-        </label>
+        {!monitorOnly && (
+          <label className="flex gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={tcpaConsent}
+              onChange={e => setTcpaConsent(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-sky-500 focus:ring-sky-500 focus:ring-offset-zinc-900 shrink-0"
+            />
+            <span className="text-xs text-zinc-400 leading-relaxed">
+              I confirm this homeowner has given me express written consent to receive automated text messages about storm alerts and free roof inspections from my company. They were told that msg &amp; data rates may apply and that they can reply <strong className="text-zinc-300">STOP</strong> at any time to opt out. <em>Checking this box will send an introductory text immediately.</em>
+            </span>
+          </label>
+        )}
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3.5 py-2.5 text-sm text-red-400">{error}</div>}
 

@@ -169,11 +169,49 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString()
+
+  // Monitor-only homeowners: notify PM when storm hits, never text the homeowner
+  const { data: monitorOnlyHomeowners } = await supabase
+    .from('homeowners')
+    .select('id, name, phone, address, zip_code, roofer_id, profiles(subscription_status)')
+    .eq('monitor_only', true)
+
+  if (monitorOnlyHomeowners?.length) {
+    const monitorZips = [...new Set(monitorOnlyHomeowners.map((h: any) => h.zip_code))]
+    const monitorAlerts: Record<string, Awaited<ReturnType<typeof getAlertsForZip>>> = {}
+    await Promise.all(monitorZips.map(async (zip) => {
+      monitorAlerts[zip as string] = await getAlertsForZip(zip as string)
+    }))
+
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: monitorNotifiedToday } = await supabase
+      .from('notifications')
+      .select('homeowner_id')
+      .in('homeowner_id', monitorOnlyHomeowners.map((h: any) => h.id))
+      .gte('created_at', `${today}T00:00:00Z`)
+    const monitorNotifiedSet = new Set(monitorNotifiedToday?.map((n: any) => n.homeowner_id))
+
+    for (const h of monitorOnlyHomeowners as any[]) {
+      const profile = h.profiles
+      if (!profile || profile.subscription_status !== 'active') continue
+      if (monitorNotifiedSet.has(h.id)) continue
+      const alerts = monitorAlerts[h.zip_code] ?? []
+      if (!alerts.length) continue
+      await supabase.from('notifications').insert({
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        type: 'hot_lead',
+        message: `Storm hit ${h.name}'s area (${h.address}). They're monitor-only — give them a call to get consent and schedule their free inspection. Call: ${h.phone}`,
+      })
+    }
+  }
+
   const { data: homeowners } = await supabase
     .from('homeowners')
     .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
+    .eq('monitor_only', false)
     .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
 
   if (!homeowners?.length) return NextResponse.json({ sent: 0 })
