@@ -183,26 +183,24 @@ export async function generateStormSms(opts: {
     messages: [
       {
         role: 'user',
-        content: `You are writing an SMS from ${haleyIntro} to a homeowner after a storm.
+        content: `You are writing an SMS from ${haleyIntro} to a homeowner whose area just had some weather.
 
 Style guide: ${messageStyle}
 
 Details:
 - Homeowner first name: ${firstName}
 - PM full name: ${pmName}
-- Storm type: ${stormType}
-- ZIP: ${zipCode}
 
-Write ONE SMS that follows this structure exactly:
+Write ONE SMS under 160 characters that follows this structure:
 1. "Hey ${firstName}, ${haleyIntro} here."
-2. "You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home."
-3. "${appointmentLine}, does that work for you? Just let me know!"
+2. One short natural line mentioning we caught some weather near their home and want to get their roof checked out. Keep it vague — no specific storm type or weather event. Sound like a real person, not a system alert.
+3. "${appointmentLine}, does that work for you?"
 
-Keep it natural and conversational. Do NOT use dashes of any kind. Do NOT include any intro like "Here is the message:" — just the message itself. Do NOT use quotation marks.`,
+Do NOT include any intro like "Here is the message:" — just the message itself. Do NOT use quotation marks.`,
       },
     ],
   })
 
   const text = message.content[0].type === 'text' ? message.content[0].text.trim() : ''
-  return text || `Hey ${firstName}, ${haleyIntro} here. You signed up for storm alerts with ${pmName} — our system flagged storm activity near your home. ${appointmentLine}, does that work for you? Just let me know!`
+  return text || `Hey ${firstName}, ${haleyIntro} here. We caught some weather near your home and wanted to reach out. ${appointmentLine}, does that work for you?`
 }
