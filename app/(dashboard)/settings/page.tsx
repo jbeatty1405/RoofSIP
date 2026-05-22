@@ -2,6 +2,7 @@ import { createClient } from '@/app/_lib/supabase/server'
 import { getGoogleAuthUrl } from '@/app/_lib/google'
 import ConnectGoogleButton from './ConnectGoogleButton'
 import ManageBillingButton from './ManageBillingButton'
+import CancelSubscriptionButton from './CancelSubscriptionButton'
 import MessageStyleForm from './MessageStyleForm'
 import SignOutButton from '@/app/_components/SignOutButton'
 import PmContactForm from './PmContactForm'
@@ -74,13 +75,18 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
           <h2 className="font-semibold text-zinc-200 mb-1">Subscription</h2>
           <p className="text-sm text-zinc-500 mb-4">$20/month · 250 SMS/month included</p>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mb-4">
             <span className={`text-xs px-2 py-0.5 rounded-full ${profile?.subscription_status === 'active' ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-500'}`}>
               {profile?.subscription_status === 'active' ? 'Active' : 'Inactive'}
             </span>
             {profile?.stripe_customer_id && <ManageBillingButton />}
           </div>
-          <p className="text-xs text-zinc-600 mt-3">To cancel, click "Manage billing" and select Cancel subscription.</p>
+          {profile?.subscription_status === 'active' && profile?.stripe_subscription_id && (
+            <CancelSubscriptionButton />
+          )}
+          {!profile?.stripe_customer_id && (
+            <p className="text-xs text-zinc-600">No subscription on file. <a href="/settings?checkout=1" className="text-sky-500 hover:underline">Subscribe to get started.</a></p>
+          )}
         </div>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
