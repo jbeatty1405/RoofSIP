@@ -150,29 +150,12 @@ export async function POST(request: NextRequest) {
         if ((inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
         if ((outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
 
-        const firstName = h.name.split(' ')[0]
-        const pmFirst = (h.profiles?.pm_name ?? 'your inspector').split(' ')[0]
-        const followUpMsg = `Hey ${firstName}, Hailey again — just wanted to make sure you saw my last message about the weather near your home. ${pmFirst} still has a spot open for your free roof check. Just respond here and we'll get it locked in!`
-
-        try {
-          await twilio.messages.create({ body: followUpMsg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
-          await supabase.from('sms_logs').insert({
-            roofer_id: h.roofer_id,
-            homeowner_id: h.id,
-            message: followUpMsg,
-            direction: 'outbound',
-            status: 'sent',
-            message_type: 'follow_up',
-          })
-          await supabase.from('notifications').insert({
-            roofer_id: h.roofer_id,
-            homeowner_id: h.id,
-            type: 'call_needed',
-            message: `Storm alert + follow-up sent to ${h.name} at ${h.address} — no response yet. Give them a call to book their free inspection.`,
-          })
-        } catch (err) {
-          console.error(`Follow-up SMS failed to ${h.phone}:`, err)
-        }
+        await supabase.from('notifications').insert({
+          roofer_id: h.roofer_id,
+          homeowner_id: h.id,
+          type: 'call_needed',
+          message: `${h.name} got a storm alert 2 days ago and hasn't responded — give them a call. ${h.phone} · ${h.address}`,
+        })
       }
     }
   }
