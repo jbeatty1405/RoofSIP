@@ -136,23 +136,45 @@ export async function POST(request: NextRequest) {
     return new NextResponse('', { status: 200 })
   }
 
-  // Get last outbound message for AI context
-  const { data: lastOutbound } = await supabase
-    .from('sms_logs')
-    .select('message')
-    .eq('homeowner_id', homeowner.id)
-    .eq('direction', 'outbound')
-    .order('sent_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Get last outbound message for AI context + last storm alert time for reply-count limit
+  const [lastOutboundRes, lastAlertRes, pendingRes] = await Promise.all([
+    supabase.from('sms_logs').select('message').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('sms_logs').select('sent_at').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').eq('message_type', 'storm_alert').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('pending_bookings').select('id, proposed_slot, status').eq('homeowner_id', homeowner.id).maybeSingle(),
+  ])
 
-  const lastHaileyMessage = lastOutbound?.message ?? `I reached out about storm activity near your home.`
+  const lastHaileyMessage = lastOutboundRes.data?.message ?? `I reached out about storm activity near your home.`
+  const lastAlertTime = lastAlertRes.data?.sent_at
+  const pending = pendingRes.data
 
-  const { data: pending } = await supabase
-    .from('pending_bookings')
-    .select('id, proposed_slot, status')
-    .eq('homeowner_id', homeowner.id)
-    .maybeSingle()
+  // Cap at 2 Hailey replies per storm conversation — hand off to PM after that
+  if (lastAlertTime) {
+    const { count: replyCount } = await supabase
+      .from('sms_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('homeowner_id', homeowner.id)
+      .eq('direction', 'outbound')
+      .eq('message_type', 'reply')
+      .gt('sent_at', lastAlertTime)
+
+    if ((replyCount ?? 0) >= 2) {
+      const handoff = `${hoFirst}, sounds like this might be easier over the phone! ${pmFirst} will give you a call to get a time locked in.`
+      await sendSms(twilio, fromPhone, handoff, toPhone)
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: handoff, direction: 'outbound', status: 'sent', message_type: 'reply' })
+      await supabase.from('notifications').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'call_needed',
+        message: `${homeowner.name} couldn't schedule over text — give them a call. ${homeowner.phone} · ${homeowner.address}`,
+      })
+      if (profile?.pm_email) {
+        try {
+          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — needs a call to confirm' })
+        } catch (err) { console.error('PM call email failed:', err) }
+      }
+      return new NextResponse('', { status: 200 })
+    }
+  }
 
   // Claude with 7s timeout — Twilio webhook times out at 10s
   let aiResult: { response: string; intent: HoReplyIntent }
