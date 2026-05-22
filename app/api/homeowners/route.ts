@@ -60,7 +60,12 @@ export async function POST(request: NextRequest) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (error) {
+    if (error.code === '23505') {
+      return NextResponse.json({ error: 'A homeowner with that phone number is already in your account.' }, { status: 409 })
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
 
   const service = await createServiceClient()
   const { data: profile } = await service

@@ -5,9 +5,9 @@ import { handleHoReply } from '@/app/_lib/ai-sms'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
-async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string) {
+async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string, from?: string) {
   try {
-    await twilio.messages.create({ body, from: process.env.TWILIO_PHONE_NUMBER!, to })
+    await twilio.messages.create({ body, from: from ?? process.env.TWILIO_PHONE_NUMBER!, to })
   } catch (err) {
     console.error(`SMS send failed to ${to}:`, err)
   }
@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   if (!isValid) return new NextResponse('Forbidden', { status: 403 })
 
   const fromPhone = payload.From
+  const toPhone = payload.To
   const messageBody = (payload.Body ?? '').trim()
   const messageLower = messageBody.toLowerCase()
 
@@ -41,12 +42,34 @@ export async function POST(request: NextRequest) {
   )
   const twilio = getTwilioClient()
 
-  const { data: homeowner } = await supabase
-    .from('homeowners')
-    .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
-    .eq('phone', fromPhone)
-    .limit(1)
-    .maybeSingle()
+  // Scope homeowner lookup by contractor when the To number identifies one.
+  // Falls back to unscoped first-match when all contractors share the same number.
+  let homeowner: any = null
+  if (toPhone) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('twilio_number', toPhone)
+      .maybeSingle()
+    if (profile) {
+      const { data } = await supabase
+        .from('homeowners')
+        .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
+        .eq('phone', fromPhone)
+        .eq('roofer_id', profile.id)
+        .maybeSingle()
+      homeowner = data
+    }
+  }
+  if (!homeowner) {
+    const { data } = await supabase
+      .from('homeowners')
+      .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
+      .eq('phone', fromPhone)
+      .limit(1)
+      .maybeSingle()
+    homeowner = data
+  }
 
   if (!homeowner) return new NextResponse('', { status: 200 })
 
@@ -76,7 +99,7 @@ export async function POST(request: NextRequest) {
       reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. We set up storm alerts for your home — just reply to join, or text STOP to opt out.`
     }
 
-    await sendSms(twilio, fromPhone, reply)
+    await sendSms(twilio, fromPhone, reply, toPhone)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent' })
     return new NextResponse('', { status: 200 })
   }
@@ -120,7 +143,7 @@ export async function POST(request: NextRequest) {
   })
 
   // Send Hailey's AI-generated reply
-  await sendSms(twilio, fromPhone, aiResponse)
+  await sendSms(twilio, fromPhone, aiResponse, toPhone)
   await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: aiResponse, direction: 'outbound', status: 'sent' })
 
   // Act on intent
