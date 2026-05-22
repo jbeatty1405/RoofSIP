@@ -1,7 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
-import { handleHoReply } from '@/app/_lib/ai-sms'
+import { handleHoReply, HoReplyIntent } from '@/app/_lib/ai-sms'
+import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
@@ -73,6 +74,17 @@ export async function POST(request: NextRequest) {
 
   if (!homeowner) return new NextResponse('', { status: 200 })
 
+  // Dedup: Twilio retries the webhook on timeout — drop duplicate deliveries
+  if (payload.MessageSid) {
+    const { data: existing } = await supabase
+      .from('sms_logs')
+      .select('id')
+      .eq('twilio_sid', payload.MessageSid)
+      .eq('direction', 'inbound')
+      .maybeSingle()
+    if (existing) return new NextResponse('', { status: 200 })
+  }
+
   await supabase.from('sms_logs').insert({
     roofer_id: homeowner.roofer_id,
     homeowner_id: homeowner.id,
@@ -82,7 +94,7 @@ export async function POST(request: NextRequest) {
     status: 'received',
   })
 
-  // Pre-opt-in: handle consent flow with simple keywords
+  // Pre-opt-in: handle consent flow — always respond regardless of quiet hours
   if (!homeowner.sms_confirmed) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
     const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
@@ -100,11 +112,11 @@ export async function POST(request: NextRequest) {
     }
 
     await sendSms(twilio, fromPhone, reply, toPhone)
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent' })
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent', message_type: 'reply' })
     return new NextResponse('', { status: 200 })
   }
 
-  // STOP always wins — TCPA compliance
+  // STOP always wins — TCPA compliance, process regardless of quiet hours
   if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
     await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
     return new NextResponse('', { status: 200 })
@@ -115,6 +127,14 @@ export async function POST(request: NextRequest) {
   const pmFirst = pmName.split(' ')[0]
   const pmPhone = profile?.pm_phone
   const hoFirst = homeowner.name.split(' ')[0]
+
+  // TCPA quiet hours: acknowledge receipt but don't send AI scheduling content
+  if (isQuietHours()) {
+    const ack = `Got your message! ${pmFirst} will follow up with you during business hours.`
+    await sendSms(twilio, fromPhone, ack, toPhone)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: ack, direction: 'outbound', status: 'sent', message_type: 'reply' })
+    return new NextResponse('', { status: 200 })
+  }
 
   // Get last outbound message for AI context
   const { data: lastOutbound } = await supabase
@@ -134,17 +154,33 @@ export async function POST(request: NextRequest) {
     .eq('homeowner_id', homeowner.id)
     .maybeSingle()
 
-  const { response: aiResponse, intent } = await handleHoReply({
-    hoMessage: messageBody,
-    lastHaileyMessage,
-    proposedSlot: pending?.proposed_slot ?? undefined,
-    pmFirstName: pmFirst,
-    hoFirstName: hoFirst,
-  })
+  // Claude with 7s timeout — Twilio webhook times out at 10s
+  let aiResult: { response: string; intent: HoReplyIntent }
+  try {
+    aiResult = await Promise.race([
+      handleHoReply({
+        hoMessage: messageBody,
+        lastHaileyMessage,
+        proposedSlot: pending?.proposed_slot ?? undefined,
+        pmFirstName: pmFirst,
+        hoFirstName: hoFirst,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000)),
+    ])
+  } catch {
+    const fallback = `Got your message! ${pmFirst} will follow up with you shortly.`
+    await sendSms(twilio, fromPhone, fallback, toPhone)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: fallback, direction: 'outbound', status: 'sent', message_type: 'reply' })
+    return new NextResponse('', { status: 200 })
+  }
 
-  // Send Hailey's AI-generated reply
-  await sendSms(twilio, fromPhone, aiResponse, toPhone)
-  await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: aiResponse, direction: 'outbound', status: 'sent' })
+  const { response: aiResponse, intent } = aiResult
+
+  // Cap at 320 chars (2 SMS segments) to control costs
+  const safeResponse = aiResponse.length > 320 ? aiResponse.slice(0, 317) + '...' : aiResponse
+
+  await sendSms(twilio, fromPhone, safeResponse, toPhone)
+  await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: safeResponse, direction: 'outbound', status: 'sent', message_type: 'reply' })
 
   // Act on intent
   if (intent.type === 'confirmed') {
@@ -161,7 +197,8 @@ export async function POST(request: NextRequest) {
 
     if (profile?.pm_email) {
       try {
-        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: '' })
+        const confirmUrl = `${process.env.NEXTAUTH_URL}/homeowners/${homeowner.id}`
+        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl })
       } catch (err) { console.error('PM confirmation email failed:', err) }
     }
 
@@ -169,12 +206,12 @@ export async function POST(request: NextRequest) {
   }
 
   else if (intent.type === 'declined') {
-    if (!pending) {
-      const pauseUntil = new Date()
-      pauseUntil.setDate(pauseUntil.getDate() + 30)
-      await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
+    const pauseUntil = new Date()
+    pauseUntil.setDate(pauseUntil.getDate() + 30)
+    await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
+    if (pending) {
+      await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
     }
-    // If pending exists, AI already asked for a better time — leave status as-is
   }
 
   else if (intent.type === 'gave_time') {
@@ -220,7 +257,6 @@ export async function POST(request: NextRequest) {
       || pending?.status === 'awaiting_ho_time'
 
     if (alreadyTried) {
-      // Second unclear — hand off to PM
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,

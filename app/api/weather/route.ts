@@ -1,12 +1,10 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
-import { getAlertsForZip } from '@/app/_lib/noaa'
-import { getTwilioClient, buildWeatherSms, buildIntroSms } from '@/app/_lib/twilio'
+import { geocodeZip, getAlertsForPoint } from '@/app/_lib/noaa'
+import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
-import { buildNoTimeWeatherSms } from '@/app/_lib/twilio'
 import { NextRequest, NextResponse } from 'next/server'
-
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
   return body.replace(/{{(\w+)}}/g, (_, key) => vars[key] ?? '')
@@ -16,14 +14,35 @@ function pickTemplate(templates: any[], stormType: string): string | null {
   if (!templates.length) return null
   const active = templates.filter(t => t.active)
   if (!active.length) return null
-
   const stormLower = stormType.toLowerCase()
   const specific = active.find(t =>
     t.storm_type !== 'Any storm' && stormLower.includes(t.storm_type.toLowerCase())
   )
   const fallback = active.find(t => t.storm_type === 'Any storm')
-  const template = specific ?? fallback ?? active[0]
-  return template?.body ?? null
+  return (specific ?? fallback ?? active[0])?.body ?? null
+}
+
+// Geocode all ZIPs with DB cache — minimises Nominatim calls across cron runs
+async function buildGeoCache(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  zips: string[]
+): Promise<Record<string, { lat: string; lon: string }>> {
+  const cache: Record<string, { lat: string; lon: string }> = {}
+  if (!zips.length) return cache
+
+  const { data: cached } = await supabase.from('zip_geocache').select('zip, lat, lon').in('zip', zips)
+  for (const row of cached ?? []) cache[row.zip] = { lat: row.lat, lon: row.lon }
+
+  const missing = zips.filter(z => !cache[z])
+  await Promise.all(missing.map(async (zip) => {
+    const point = await geocodeZip(zip)
+    if (point) {
+      cache[zip] = point
+      await supabase.from('zip_geocache').upsert({ zip, lat: point.lat, lon: point.lon, cached_at: new Date().toISOString() })
+    }
+  }))
+
+  return cache
 }
 
 export async function POST(request: NextRequest) {
@@ -37,12 +56,13 @@ export async function POST(request: NextRequest) {
   const supabase = await createServiceClient()
   const twilio = getTwilioClient()
 
-  // Send intro texts to homeowners added during quiet hours who haven't been texted yet
+  // Deferred intro texts: homeowners added during quiet hours, not yet texted
   const { data: uncontacted } = await supabase
     .from('homeowners')
-    .select('*, profiles(pm_name, company_name)')
+    .select('*, profiles(pm_name, company_name, subscription_status)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', false)
+    .limit(10000)
 
   if (uncontacted?.length) {
     const { data: existingLogs } = await supabase
@@ -56,11 +76,8 @@ export async function POST(request: NextRequest) {
     for (const h of uncontacted as any[]) {
       if (alreadySentIds.has(h.id)) continue
       const profile = h.profiles
-      if (!profile) continue
-      const firstName = h.name.split(' ')[0]
-      const pmName = profile.pm_name ?? 'Your contractor'
-      const company = profile.company_name ? ` from ${profile.company_name}` : ''
-      const msg = buildIntroSms(pmName, h.name, profile.company_name ?? undefined)
+      if (!profile || profile.subscription_status !== 'active') continue
+      const msg = buildIntroSms(profile.pm_name ?? 'Your contractor', h.name, profile.company_name ?? undefined)
       try {
         await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
         await supabase.from('sms_logs').insert({
@@ -69,6 +86,7 @@ export async function POST(request: NextRequest) {
           message: msg,
           direction: 'outbound',
           status: 'sent',
+          message_type: 'intro',
         })
       } catch (err) {
         console.error(`Deferred opt-in SMS failed to ${h.phone}:`, err)
@@ -76,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Follow-up texts: homeowners who got a storm alert 48-96h ago with no reply
+  // Follow-up: homeowners who got a storm alert 48–96h ago with no reply
   const followUpStart = new Date(Date.now() - 96 * 3600 * 1000).toISOString()
   const followUpEnd = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
 
@@ -85,20 +103,21 @@ export async function POST(request: NextRequest) {
     .select('id, name, phone, roofer_id, profiles(subscription_status, pm_name, company_name)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
+    .limit(10000)
 
   if ((optedInHomeowners ?? []).length > 0) {
     const optedInIds = (optedInHomeowners ?? []).map((h: any) => h.id)
 
-    // Bulk-fetch alert logs in the follow-up window (1 query instead of N)
+    // Filter to storm_alert messages only so intro texts don't trigger follow-ups
     const { data: windowAlertLogs } = await supabase
       .from('sms_logs')
       .select('homeowner_id, sent_at')
       .in('homeowner_id', optedInIds)
       .eq('direction', 'outbound')
+      .eq('message_type', 'storm_alert')
       .gte('sent_at', followUpStart)
       .lte('sent_at', followUpEnd)
 
-    // Map homeowner_id → earliest alert time in window
     const alertTimeByHomeowner = new Map<string, string>()
     for (const log of windowAlertLogs ?? []) {
       if (!alertTimeByHomeowner.has(log.homeowner_id)) {
@@ -110,7 +129,6 @@ export async function POST(request: NextRequest) {
       const relevantIds = [...alertTimeByHomeowner.keys()]
       const minAlertTime = [...alertTimeByHomeowner.values()].sort()[0]
 
-      // Bulk-fetch all post-alert logs for relevant homeowners (2 queries instead of 2N)
       const { data: postAlertLogs } = await supabase
         .from('sms_logs')
         .select('homeowner_id, direction, sent_at')
@@ -120,27 +138,17 @@ export async function POST(request: NextRequest) {
       const inboundByHomeowner = new Map<string, string[]>()
       const outboundByHomeowner = new Map<string, string[]>()
       for (const log of postAlertLogs ?? []) {
-        if (log.direction === 'inbound') {
-          const arr = inboundByHomeowner.get(log.homeowner_id) ?? []
-          arr.push(log.sent_at)
-          inboundByHomeowner.set(log.homeowner_id, arr)
-        } else {
-          const arr = outboundByHomeowner.get(log.homeowner_id) ?? []
-          arr.push(log.sent_at)
-          outboundByHomeowner.set(log.homeowner_id, arr)
-        }
+        const arr = (log.direction === 'inbound' ? inboundByHomeowner : outboundByHomeowner).get(log.homeowner_id) ?? []
+        arr.push(log.sent_at)
+        ;(log.direction === 'inbound' ? inboundByHomeowner : outboundByHomeowner).set(log.homeowner_id, arr)
       }
 
       for (const h of (optedInHomeowners ?? []) as any[]) {
         if (h.profiles?.subscription_status !== 'active') continue
         const alertTime = alertTimeByHomeowner.get(h.id)
         if (!alertTime) continue
-
-        const hasReply = (inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)
-        if (hasReply) continue
-
-        const hasFollowUp = (outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)
-        if (hasFollowUp) continue
+        if ((inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
+        if ((outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
 
         const firstName = h.name.split(' ')[0]
         const pmFirst = (h.profiles?.pm_name ?? 'your inspector').split(' ')[0]
@@ -154,6 +162,7 @@ export async function POST(request: NextRequest) {
             message: followUpMsg,
             direction: 'outbound',
             status: 'sent',
+            message_type: 'follow_up',
           })
           await supabase.from('notifications').insert({
             roofer_id: h.roofer_id,
@@ -170,19 +179,37 @@ export async function POST(request: NextRequest) {
 
   const now = new Date().toISOString()
 
-  // Monitor-only homeowners: notify PM when storm hits, never text the homeowner
   const { data: monitorOnlyHomeowners } = await supabase
     .from('homeowners')
     .select('id, name, phone, address, zip_code, roofer_id, profiles(subscription_status)')
     .eq('monitor_only', true)
+    .limit(10000)
 
+  const { data: activeHomeowners } = await supabase
+    .from('homeowners')
+    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
+    .eq('tcpa_consent', true)
+    .eq('sms_confirmed', true)
+    .eq('monitor_only', false)
+    .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
+    .limit(10000)
+
+  // Geocache all unique ZIPs in one batch for both monitor-only and active homeowners
+  const allZips = [...new Set([
+    ...(monitorOnlyHomeowners ?? []).map((h: any) => h.zip_code),
+    ...(activeHomeowners ?? []).map((h: any) => h.zip_code),
+  ].filter(Boolean))] as string[]
+
+  const geoCache = await buildGeoCache(supabase, allZips)
+
+  const alertsByZip: Record<string, Awaited<ReturnType<typeof getAlertsForPoint>>> = {}
+  await Promise.all(allZips.map(async (zip) => {
+    const point = geoCache[zip]
+    alertsByZip[zip] = point ? await getAlertsForPoint(point.lat, point.lon) : []
+  }))
+
+  // Monitor-only: notify PM on storm hit, never text the homeowner
   if (monitorOnlyHomeowners?.length) {
-    const monitorZips = [...new Set(monitorOnlyHomeowners.map((h: any) => h.zip_code))]
-    const monitorAlerts: Record<string, Awaited<ReturnType<typeof getAlertsForZip>>> = {}
-    await Promise.all(monitorZips.map(async (zip) => {
-      monitorAlerts[zip as string] = await getAlertsForZip(zip as string)
-    }))
-
     const today = new Date().toISOString().slice(0, 10)
     const { data: monitorNotifiedToday } = await supabase
       .from('notifications')
@@ -195,7 +222,7 @@ export async function POST(request: NextRequest) {
       const profile = h.profiles
       if (!profile || profile.subscription_status !== 'active') continue
       if (monitorNotifiedSet.has(h.id)) continue
-      const alerts = monitorAlerts[h.zip_code] ?? []
+      const alerts = alertsByZip[h.zip_code] ?? []
       if (!alerts.length) continue
       await supabase.from('notifications').insert({
         roofer_id: h.roofer_id,
@@ -206,39 +233,31 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const { data: homeowners } = await supabase
-    .from('homeowners')
-    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
-    .eq('tcpa_consent', true)
-    .eq('sms_confirmed', true)
-    .eq('monitor_only', false)
-    .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
+  if (!activeHomeowners?.length) return NextResponse.json({ sent: 0 })
 
-  if (!homeowners?.length) return NextResponse.json({ sent: 0 })
+  // Alert dedup: skip homeowners who already received this specific NOAA alert
+  const { data: sentAlertLogs } = await supabase
+    .from('sms_logs')
+    .select('homeowner_id, noaa_alert_id')
+    .in('homeowner_id', activeHomeowners.map((h: any) => h.id))
+    .not('noaa_alert_id', 'is', null)
+    .eq('direction', 'outbound')
+  const sentAlertSet = new Set((sentAlertLogs ?? []).map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
-  // Bulk-fetch today's sent logs (1 query instead of N)
+  // Fallback dedup for alerts without an ID
   const today = new Date().toISOString().slice(0, 10)
   const { data: todayLogs } = await supabase
     .from('sms_logs')
     .select('homeowner_id')
-    .in('homeowner_id', homeowners.map((h: any) => h.id))
+    .in('homeowner_id', activeHomeowners.map((h: any) => h.id))
     .eq('direction', 'outbound')
     .gte('sent_at', `${today}T00:00:00Z`)
   const sentTodaySet = new Set(todayLogs?.map((l: any) => l.homeowner_id))
 
-  const zips = [...new Set(homeowners.map((h: any) => h.zip_code))]
-  const alertsByZip: Record<string, Awaited<ReturnType<typeof getAlertsForZip>>> = {}
-
-  await Promise.all(zips.map(async (zip) => {
-    alertsByZip[zip as string] = await getAlertsForZip(zip as string)
-  }))
-
-  // Cache templates per roofer
   const templateCache: Record<string, any[]> = {}
-
   let totalSent = 0
 
-  for (const homeowner of homeowners as any[]) {
+  for (const homeowner of activeHomeowners as any[]) {
     const profile = homeowner.profiles
     if (!profile || profile.subscription_status !== 'active') continue
     if (profile.sms_count_this_month >= profile.sms_cap) continue
@@ -246,9 +265,14 @@ export async function POST(request: NextRequest) {
     const alerts = alertsByZip[homeowner.zip_code] ?? []
     if (!alerts.length) continue
 
-    if (sentTodaySet.has(homeowner.id)) continue
+    const alert = alerts[0]
+    const alertId = alert.id || null
 
-    // Load templates for this roofer (cached)
+    const alreadySent = alertId
+      ? sentAlertSet.has(`${homeowner.id}:${alertId}`)
+      : sentTodaySet.has(homeowner.id)
+    if (alreadySent) continue
+
     if (!templateCache[profile.id]) {
       const { data: tmpl } = await supabase
         .from('sms_templates')
@@ -258,17 +282,14 @@ export async function POST(request: NextRequest) {
       templateCache[profile.id] = tmpl ?? []
     }
 
-    const alert = alerts[0]
     const firstName = homeowner.name.split(' ')[0]
     const pmName = profile.pm_name ?? 'Your inspector'
-
     const market = await getMarketById(supabase, homeowner.market_id)
 
     let message: string
     let proposedSlot: Date | null = null
 
     if (!market) {
-      // No schedule configured — inform HO, notify PM directly
       message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
@@ -277,7 +298,6 @@ export async function POST(request: NextRequest) {
         message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. No schedule set — reach out to book their free inspection. Call: ${homeowner.phone}`,
       })
     } else {
-      // Market configured — pick slot and bake it into the SMS
       proposedSlot = await getNextAvailableSlot(supabase, market, profile.id)
       const proposedTime = formatSlot(proposedSlot)
 
@@ -310,6 +330,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Cap at 320 chars (2 SMS segments) to control costs
+    if (message.length > 320) message = message.slice(0, 317) + '...'
+
     try {
       const msg = await twilio.messages.create({
         body: message,
@@ -324,6 +347,8 @@ export async function POST(request: NextRequest) {
         twilio_sid: msg.sid,
         direction: 'outbound',
         status: msg.status,
+        message_type: 'storm_alert',
+        noaa_alert_id: alertId,
       })
 
       if (proposedSlot) {
@@ -337,7 +362,6 @@ export async function POST(request: NextRequest) {
       }
 
       await supabase.rpc('increment_sms_count', { p_id: profile.id })
-
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)

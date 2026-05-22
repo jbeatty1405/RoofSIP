@@ -1,10 +1,9 @@
-// Returns true if current time is outside allowed SMS sending hours.
-// Uses Eastern Time as the reference — this means no texts before 8am ET (5am PT)
-// or after 9pm ET (6pm PT), covering all major US timezones safely.
+// Returns true if current time is outside TCPA-allowed SMS hours (8am–9pm MST).
+// Uses Arizona time (MST year-round, no DST).
 export function isQuietHours(): boolean {
   const h = parseInt(
     new Date().toLocaleString('en-US', {
-      timeZone: 'America/New_York',
+      timeZone: 'America/Phoenix',
       hour: 'numeric',
       hour12: false,
     })
