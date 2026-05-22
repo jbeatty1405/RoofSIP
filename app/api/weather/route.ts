@@ -3,7 +3,7 @@ import { getAlertsForZip } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
-import { getMarketForZip, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
+import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
 import { buildNoTimeWeatherSms } from '@/app/_lib/twilio'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
     const firstName = homeowner.name.split(' ')[0]
     const pmName = profile.pm_name ?? 'Your inspector'
 
-    const market = await getMarketForZip(supabase, homeowner.zip_code)
+    const market = await getMarketById(supabase, homeowner.market_id)
 
     let message: string
     let proposedSlot: Date | null = null

@@ -17,18 +17,11 @@ export default function NewMarketPage() {
   const [workingDays, setWorkingDays] = useState([1, 2, 3, 4, 5])
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
-  const [zipInput, setZipInput] = useState('')
-  const [zips, setZips] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   function toggleDay(day: number) {
     setWorkingDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort())
-  }
-
-  function addZip() {
-    const trimmed = zipInput.trim()
-    if (trimmed.match(/^\d{5}$/) && !zips.includes(trimmed)) { setZips(z => [...z, trimmed]); setZipInput('') }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -46,8 +39,6 @@ export default function NewMarketPage() {
     }).select().single()
 
     if (marketError) { setError(marketError.message); setLoading(false); return }
-    if (zips.length > 0) await supabase.from('market_zips').insert(zips.map(zip => ({ market_id: market.id, zip_code: zip })))
-
     router.push('/markets')
     router.refresh()
   }
@@ -111,26 +102,6 @@ export default function NewMarketPage() {
             </div>
           </>
         )}
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-2">ZIP codes</label>
-          <div className="flex gap-2 mb-2">
-            <input type="text" value={zipInput} onChange={e => setZipInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addZip() } }}
-              maxLength={5} placeholder="85701" className={inputClass} />
-            <button type="button" onClick={addZip} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg text-sm font-medium hover:bg-zinc-700 transition-colors">Add</button>
-          </div>
-          {zips.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {zips.map(zip => (
-                <span key={zip} className="flex items-center gap-1 text-xs bg-zinc-800 text-zinc-400 px-2 py-1 rounded-full">
-                  {zip}
-                  <button type="button" onClick={() => setZips(z => z.filter(x => x !== zip))} className="text-zinc-600 hover:text-zinc-300">×</button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3.5 py-2.5 text-sm text-red-400">{error}</div>}
 

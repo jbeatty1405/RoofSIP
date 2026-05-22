@@ -12,7 +12,7 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
 
   const { data: homeowner } = await supabase
     .from('homeowners')
-    .select('*')
+    .select('*, markets(name)')
     .eq('id', id)
     .eq('roofer_id', user!.id)
     .single()
@@ -69,8 +69,8 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">ZIP code</dt>
-            <dd className="text-sm text-zinc-300 mt-1">{homeowner.zip_code}</dd>
+            <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Market</dt>
+            <dd className="text-sm text-zinc-300 mt-1">{(homeowner as any).markets?.name ?? <span className="text-zinc-500">None</span>}</dd>
           </div>
           <div>
             <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Consent</dt>

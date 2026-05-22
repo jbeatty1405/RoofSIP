@@ -29,7 +29,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
 
   const { data: homeowners } = await supabase
     .from('homeowners')
-    .select('*')
+    .select('*, markets(name)')
     .eq('roofer_id', user!.id)
     .order('created_at', { ascending: false })
 
@@ -79,7 +79,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
                 <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">Name</th>
                 <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">Phone</th>
                 <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">Address</th>
-                <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">ZIP</th>
+                <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">Market</th>
                 <th className="text-left text-xs font-medium text-zinc-500 uppercase tracking-wide px-5 py-3">Status</th>
                 <th className="px-5 py-3" />
               </tr>
@@ -97,7 +97,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
                     <a href={`tel:${h.phone}`} className="text-sm text-zinc-400 hover:text-sky-400 transition-colors">{h.phone}</a>
                   </td>
                   <td className="px-5 py-3.5 text-sm text-zinc-400">{h.address}</td>
-                  <td className="px-5 py-3.5 text-sm text-zinc-400">{h.zip_code}</td>
+                  <td className="px-5 py-3.5 text-sm text-zinc-400">{(h as any).markets?.name ?? <span className="text-zinc-600">—</span>}</td>
                   <td className="px-5 py-3.5">
                     <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${STATUS_COLOR[h.status] ?? STATUS_COLOR.pending}`}>
                       {STATUS_LABEL[h.status] ?? 'Pending'}

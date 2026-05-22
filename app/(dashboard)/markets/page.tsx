@@ -7,7 +7,7 @@ export default async function MarketsPage() {
 
   const { data: markets } = await supabase
     .from('markets')
-    .select('*, market_zips(zip_code)')
+    .select('*')
     .eq('roofer_id', user!.id)
     .order('created_at', { ascending: true })
 
@@ -18,7 +18,7 @@ export default async function MarketsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Markets</h1>
-          <p className="text-sm text-zinc-500 mt-1">Group ZIP codes into markets and control scheduling per area.</p>
+          <p className="text-sm text-zinc-500 mt-1">Create markets to group homeowners and control scheduling per area.</p>
         </div>
         <Link href="/markets/new" className="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -43,13 +43,6 @@ export default async function MarketsPage() {
                   <p className="text-sm text-zinc-500">
                     {m.working_days.map((d: number) => DAY_NAMES[d]).join(', ')} · {m.working_hours_start.slice(0, 5)} – {m.working_hours_end.slice(0, 5)}
                   </p>
-                  <div className="flex gap-1.5 mt-3 flex-wrap">
-                    {m.market_zips?.map((z: any) => (
-                      <span key={z.zip_code} className="text-xs bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
-                        {z.zip_code}
-                      </span>
-                    ))}
-                  </div>
                 </div>
                 <Link href={`/markets/${m.id}`} className="text-sm text-zinc-600 hover:text-zinc-200 font-medium transition-colors shrink-0 ml-4">
                   Edit →

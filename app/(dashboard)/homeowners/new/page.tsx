@@ -2,17 +2,30 @@
 
 import { createClient } from '@/app/_lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
 export default function NewHomeownerPage() {
   const router = useRouter()
   const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
+  const [marketId, setMarketId] = useState('')
+  const [markets, setMarkets] = useState<{ id: string; name: string }[]>([])
   const [tcpaConsent, setTcpaConsent] = useState(false)
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    async function loadMarkets() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('markets').select('id, name').eq('roofer_id', user.id).order('name')
+      setMarkets(data ?? [])
+    }
+    loadMarkets()
+  }, [])
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -46,7 +59,7 @@ export default function NewHomeownerPage() {
     const res = await fetch('/api/homeowners', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, photoUrls, tcpaConsent }),
+      body: JSON.stringify({ ...form, photoUrls, tcpaConsent, marketId: marketId || null }),
     })
 
     const data = await res.json()
@@ -88,6 +101,14 @@ export default function NewHomeownerPage() {
         <div>
           <label htmlFor="ho-zip" className="block text-sm font-medium text-zinc-300 mb-1.5">ZIP code</label>
           <input id="ho-zip" type="text" value={form.zipCode} onChange={e => set('zipCode', e.target.value)} required maxLength={5} pattern="[0-9]{5}" placeholder="85701" className={inputClass} />
+        </div>
+
+        <div>
+          <label htmlFor="ho-market" className="block text-sm font-medium text-zinc-300 mb-1.5">Market</label>
+          <select id="ho-market" value={marketId} onChange={e => setMarketId(e.target.value)} className={inputClass}>
+            <option value="">No market</option>
+            {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
         </div>
 
         <div>

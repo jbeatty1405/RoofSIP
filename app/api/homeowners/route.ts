@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const { name, address, zipCode, photoUrls, phone, tcpaConsent } = validation
+  const { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId } = validation
 
   const recent = await homeownerCreatesLast24h(supabase, user.id)
   if (recent >= HOMEOWNER_DAILY_LIMIT) {
@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       phone,
       address,
       zip_code: zipCode,
+      market_id: marketId ?? null,
       tcpa_consent: tcpaConsent,
       tcpa_consent_at: tcpaConsent ? new Date().toISOString() : null,
       roof_photos: photoUrls,
@@ -104,6 +105,7 @@ type ValidHomeowner = {
   photoUrls: string[]
   phone: string
   tcpaConsent: boolean
+  marketId: string | null
 }
 
 function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { error: string } {
@@ -112,6 +114,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
   const zipCode = typeof body.zipCode === 'string' ? body.zipCode.trim() : ''
   const rawPhone = typeof body.phone === 'string' ? body.phone : ''
   const tcpaConsent = body.tcpaConsent === true
+  const marketId = typeof body.marketId === 'string' && body.marketId ? body.marketId : null
 
   if (!name) return { error: 'Name required' }
   if (name.length > MAX_NAME) return { error: 'Name too long' }
@@ -133,7 +136,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
     photoUrls.push(u)
   }
 
-  return { name, address, zipCode, photoUrls, phone, tcpaConsent }
+  return { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId }
 }
 
 function normalizePhone(raw: string): string {

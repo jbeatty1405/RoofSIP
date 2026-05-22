@@ -19,8 +19,6 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
   const [workingDays, setWorkingDays] = useState([1, 2, 3, 4, 5])
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
-  const [zips, setZips] = useState<string[]>([])
-  const [zipInput, setZipInput] = useState('')
   const [blockedInput, setBlockedInput] = useState('')
   const [blockedDates, setBlockedDates] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -32,7 +30,7 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
       const supabase = createClient()
       const { data: market } = await supabase
         .from('markets')
-        .select('*, market_zips(zip_code)')
+        .select('*')
         .eq('id', id)
         .single()
 
@@ -42,7 +40,6 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
         setWorkingDays(market.working_days)
         setStartTime(market.working_hours_start.slice(0, 5))
         setEndTime(market.working_hours_end.slice(0, 5))
-        setZips(market.market_zips?.map((z: any) => z.zip_code) ?? [])
       }
 
       const { data: blocked } = await supabase
@@ -58,11 +55,6 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
 
   function toggleDay(day: number) {
     setWorkingDays(d => d.includes(day) ? d.filter(x => x !== day) : [...d, day].sort())
-  }
-
-  function addZip() {
-    const t = zipInput.trim()
-    if (t.match(/^\d{5}$/) && !zips.includes(t)) { setZips(z => [...z, t]); setZipInput('') }
   }
 
   async function addBlockedDate() {
@@ -90,11 +82,6 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
       name, auto_schedule: autoSchedule, working_days: workingDays,
       working_hours_start: startTime, working_hours_end: endTime,
     }).eq('id', id)
-
-    await supabase.from('market_zips').delete().eq('market_id', id)
-    if (zips.length > 0) {
-      await supabase.from('market_zips').insert(zips.map(zip => ({ market_id: id, zip_code: zip })))
-    }
 
     router.push('/markets')
     router.refresh()
@@ -175,28 +162,6 @@ export default function EditMarketPage({ params }: { params: Promise<{ id: strin
             </div>
           </>
         )}
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-700 mb-2">ZIP codes</label>
-          <div className="flex gap-2 mb-2">
-            <input type="text" value={zipInput} onChange={e => setZipInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addZip() } }}
-              maxLength={5} placeholder="85701"
-              className="flex-1 px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
-            <button type="button" onClick={addZip}
-              className="px-4 py-2 bg-zinc-100 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-200 transition-colors">Add</button>
-          </div>
-          {zips.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {zips.map(zip => (
-                <span key={zip} className="flex items-center gap-1 text-xs bg-zinc-100 text-zinc-700 px-2 py-1 rounded-full">
-                  {zip}
-                  <button type="button" onClick={() => setZips(z => z.filter(x => x !== zip))} className="text-zinc-400 hover:text-zinc-700">×</button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
 
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button type="submit" disabled={loading}

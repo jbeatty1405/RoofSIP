@@ -10,18 +10,18 @@ export type Market = {
   working_hours_end: string
 }
 
-export async function getMarketForZip(
+export async function getMarketById(
   supabase: SupabaseClient,
-  zip: string
+  marketId: string | null | undefined
 ): Promise<Market | null> {
+  if (!marketId) return null
   const { data } = await supabase
-    .from('market_zips')
-    .select('markets(*)')
-    .eq('zip_code', zip)
-    .limit(1)
+    .from('markets')
+    .select('*')
+    .eq('id', marketId)
     .maybeSingle()
 
-  return (data?.markets as unknown as Market) ?? null
+  return (data as Market) ?? null
 }
 
 export function formatSlot(slot: Date): string {
