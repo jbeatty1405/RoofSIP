@@ -54,7 +54,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Market-Based Sending',
-    desc: 'Group ZIP codes into markets with custom working hours and blackout dates. Texts go out at the right time in every area.',
+    desc: 'Organize homeowners into markets with custom working hours and blackout dates. Texts go out at the right time in every area.',
   },
   {
     icon: (
@@ -80,17 +80,17 @@ const STEPS = [
   {
     n: '01',
     title: 'Add your homeowners',
-    desc: 'Import your contact list. Check the TCPA consent box confirming they\'ve agreed to hear from you.',
+    desc: 'Add people as you go — from your notepad, past jobs, or door-to-door. A name and phone number is all you need.',
   },
   {
     n: '02',
-    title: 'Storm hits their ZIP',
-    desc: 'NOAA detects hail or wind damage. RoofSIP sends a personalized AI-written text within the hour.',
+    title: 'Storm hits their area',
+    desc: 'NOAA detects hail or wind. RoofSIP sends a personal text within the hour — sounds like you wrote it.',
   },
   {
     n: '03',
-    title: 'You show up to the job',
-    desc: 'Homeowner replies YES. You get a confirmation email. Approve it and the appointment is set.',
+    title: 'Wake up to new appointments',
+    desc: 'Homeowners say yes, Hailey handles the rest. Your calendar fills overnight. You just show up.',
   },
 ]
 
@@ -179,38 +179,42 @@ export default function LandingPage() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-2xl shadow-black/60">
             {/* Header bar */}
             <div className="flex items-center gap-3 pb-3 border-b border-zinc-800 mb-3">
-              <div className="w-8 h-8 rounded-full bg-sky-500/20 border border-sky-500/30 flex items-center justify-center">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                </svg>
+              <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300">
+                SC
               </div>
               <div>
-                <p className="text-white text-sm font-medium">RoofSIP</p>
-                <div className="flex items-center gap-1">
-                  <div className="relative flex">
-                    <span className="animate-pulse-ring absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
-                  </div>
-                  <p className="text-zinc-500 text-xs ml-1.5">Storm alert triggered · just now</p>
-                </div>
+                <p className="text-white text-sm font-medium">Sarah C.</p>
+                <p className="text-zinc-500 text-xs">Text Message</p>
+              </div>
+              <div className="ml-auto flex items-center gap-1">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
+                </span>
+                <span className="text-zinc-600 text-xs">now</span>
               </div>
             </div>
             {/* SMS bubbles */}
             <div className="space-y-2 text-sm">
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                  <p className="text-zinc-200 leading-snug">Hi Sarah! We noticed a hail storm hit your neighborhood yesterday. Would you like us to come out for a free roof inspection? Reply <span className="text-sky-400">YES</span> to schedule or STOP to opt out.</p>
-                  <p className="text-zinc-600 text-xs mt-1">— Davis Roofing Co.</p>
+                  <p className="text-zinc-200 leading-snug">Hey Sarah, Marcus here from Titan Roofing. Saw that hail came through your area yesterday — wanted to check in and see if your roof came out okay. We're doing free inspections for a few homeowners this week if you want us to swing by.</p>
                 </div>
               </div>
+              <p className="text-zinc-600 text-xs text-left pl-1">10:43 AM</p>
               <div className="flex justify-end">
-                <div className="bg-sky-500 rounded-2xl rounded-tr-sm px-3.5 py-2.5">
-                  <p className="text-white leading-snug">YES please!</p>
+                <div className="bg-sky-500 rounded-2xl rounded-tr-sm px-3.5 py-2.5 max-w-[80%]">
+                  <p className="text-white leading-snug">Oh wow yeah that'd be great, I did notice some stuff on the porch</p>
                 </div>
               </div>
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                  <p className="text-zinc-200 leading-snug">Perfect! We'll be in touch shortly to confirm your time. Talk soon!</p>
+                  <p className="text-zinc-200 leading-snug">Perfect. I'll put you down for Thursday at 9am — does that work?</p>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <div className="bg-sky-500 rounded-2xl rounded-tr-sm px-3.5 py-2.5">
+                  <p className="text-white leading-snug">Works for me 👍</p>
                 </div>
               </div>
             </div>
