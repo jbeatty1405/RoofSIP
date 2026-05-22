@@ -172,7 +172,7 @@ export default function NewHomeownerPage() {
           )}
         </div>
 
-        {!monitorOnly && (
+        {monitorOnly === false && (
           <label className="flex gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
