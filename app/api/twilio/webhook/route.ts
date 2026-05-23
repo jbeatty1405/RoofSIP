@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
-import { handleHoReply, preClassifyIntent, HoReplyIntent } from '@/app/_lib/ai-sms'
+import { handleHoReply, preClassifyIntent, parseHoTimeReply, HoReplyIntent } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
@@ -137,16 +137,37 @@ export async function POST(request: NextRequest) {
     await sendSms(twilio, fromPhone, ack, toPhone)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: ack, direction: 'outbound', status: 'sent', message_type: 'reply' })
 
-    // Act on unambiguous confirmed/declined without another SMS
+    // Act on unambiguous intent silently — no reply to HO to stay TCPA-compliant
     const quickIntent = preClassifyIntent(messageBody)
     if (quickIntent?.type === 'confirmed' && pending) {
       await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
       await supabase.from('notifications').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, type: 'hot_lead', message: `${homeowner.name} confirmed after hours — follow up to lock in a time. ${homeowner.phone} · ${homeowner.address}` })
+      if (profile?.pm_email) {
+        try {
+          const proposedStr = pending?.proposed_slot
+            ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+            : 'a time TBD'
+          await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${process.env.NEXTAUTH_URL}/homeowners/${homeowner.id}` })
+        } catch (err) { console.error('PM confirmation email (quiet hours) failed:', err) }
+      }
     } else if (quickIntent?.type === 'declined') {
       const pauseUntil = new Date()
       pauseUntil.setDate(pauseUntil.getDate() + 30)
       await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
       if (pending) await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
+    } else {
+      // Try to parse a specific time — add to PM's schedule without texting HO
+      const parsedTime = await parseHoTimeReply(messageBody)
+      if (parsedTime && pending) {
+        const timeStr = parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+        await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: parsedTime.toISOString() }).eq('id', pending.id)
+        await supabase.from('notifications').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, type: 'call_needed', message: `${homeowner.name} requested ${timeStr} after hours — confirm with them. ${homeowner.phone} · ${homeowner.address}` })
+        if (profile?.pm_email) {
+          try {
+            await sendPmTimeCheckEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: timeStr })
+          } catch (err) { console.error('PM time-check email (quiet hours) failed:', err) }
+        }
+      }
     }
 
     return new NextResponse('', { status: 200 })
