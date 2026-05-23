@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
-import { handleHoReply, HoReplyIntent } from '@/app/_lib/ai-sms'
+import { handleHoReply, preClassifyIntent, HoReplyIntent } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
@@ -74,25 +74,16 @@ export async function POST(request: NextRequest) {
 
   if (!homeowner) return new NextResponse('', { status: 200 })
 
-  // Dedup: Twilio retries the webhook on timeout — drop duplicate deliveries
-  if (payload.MessageSid) {
-    const { data: existing } = await supabase
-      .from('sms_logs')
-      .select('id')
-      .eq('twilio_sid', payload.MessageSid)
-      .eq('direction', 'inbound')
-      .maybeSingle()
-    if (existing) return new NextResponse('', { status: 200 })
-  }
-
-  await supabase.from('sms_logs').insert({
-    roofer_id: homeowner.roofer_id,
-    homeowner_id: homeowner.id,
-    message: payload.Body,
-    twilio_sid: payload.MessageSid,
-    direction: 'inbound',
-    status: 'received',
-  })
+  // Dedup: upsert so Twilio retries are silently dropped at the DB level
+  const { data: inboundLog } = await supabase
+    .from('sms_logs')
+    .upsert(
+      { roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: payload.Body, twilio_sid: payload.MessageSid, direction: 'inbound', status: 'received' },
+      { onConflict: 'twilio_sid,direction', ignoreDuplicates: true }
+    )
+    .select('id')
+    .maybeSingle()
+  if (!inboundLog) return new NextResponse('', { status: 200 })
 
   // Pre-opt-in: handle consent flow — always respond regardless of quiet hours
   if (!homeowner.sms_confirmed) {
@@ -101,6 +92,10 @@ export async function POST(request: NextRequest) {
 
     if (isOptIn) {
       await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
+      const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
+      const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home.`
+      await sendSms(twilio, fromPhone, confirmation, toPhone)
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: confirmation, direction: 'outbound', status: 'sent', message_type: 'opt_in_confirmation' })
       return new NextResponse('', { status: 200 })
     }
 
@@ -130,24 +125,41 @@ export async function POST(request: NextRequest) {
   const pmPhone = profile?.pm_phone
   const hoFirst = homeowner.name.split(' ')[0]
 
+  const { data: pending } = await supabase
+    .from('pending_bookings')
+    .select('id, proposed_slot, status')
+    .eq('homeowner_id', homeowner.id)
+    .maybeSingle()
+
   // TCPA quiet hours: acknowledge receipt but don't send AI scheduling content
   if (isQuietHours()) {
     const ack = `Got your message! ${pmFirst} will follow up with you during business hours.`
     await sendSms(twilio, fromPhone, ack, toPhone)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: ack, direction: 'outbound', status: 'sent', message_type: 'reply' })
+
+    // Act on unambiguous confirmed/declined without another SMS
+    const quickIntent = preClassifyIntent(messageBody)
+    if (quickIntent?.type === 'confirmed' && pending) {
+      await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
+      await supabase.from('notifications').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, type: 'hot_lead', message: `${homeowner.name} confirmed after hours — follow up to lock in a time. ${homeowner.phone} · ${homeowner.address}` })
+    } else if (quickIntent?.type === 'declined') {
+      const pauseUntil = new Date()
+      pauseUntil.setDate(pauseUntil.getDate() + 30)
+      await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
+      if (pending) await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
+    }
+
     return new NextResponse('', { status: 200 })
   }
 
   // Get last outbound message for AI context + last storm alert time for reply-count limit
-  const [lastOutboundRes, lastAlertRes, pendingRes] = await Promise.all([
+  const [lastOutboundRes, lastAlertRes] = await Promise.all([
     supabase.from('sms_logs').select('message').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('sms_logs').select('sent_at').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').eq('message_type', 'storm_alert').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
-    supabase.from('pending_bookings').select('id, proposed_slot, status').eq('homeowner_id', homeowner.id).maybeSingle(),
   ])
 
   const lastHaileyMessage = lastOutboundRes.data?.message ?? `I reached out about storm activity near your home.`
   const lastAlertTime = lastAlertRes.data?.sent_at
-  const pending = pendingRes.data
 
   // Cap at 2 Hailey replies per storm conversation — hand off to PM after that
   if (lastAlertTime) {
@@ -160,9 +172,18 @@ export async function POST(request: NextRequest) {
       .gt('sent_at', lastAlertTime)
 
     if ((replyCount ?? 0) >= 2) {
+      const { data: existingHandoff } = await supabase
+        .from('sms_logs')
+        .select('id')
+        .eq('homeowner_id', homeowner.id)
+        .eq('message_type', 'handoff')
+        .gt('sent_at', lastAlertTime)
+        .maybeSingle()
+      if (existingHandoff) return new NextResponse('', { status: 200 })
+
       const handoff = `${hoFirst}, sounds like this might be easier over the phone! ${pmFirst} will give you a call to get a time locked in.`
       await sendSms(twilio, fromPhone, handoff, toPhone)
-      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: handoff, direction: 'outbound', status: 'sent', message_type: 'reply' })
+      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: handoff, direction: 'outbound', status: 'sent', message_type: 'handoff' })
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,

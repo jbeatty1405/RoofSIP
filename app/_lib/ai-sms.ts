@@ -64,7 +64,7 @@ const CLEAR_NO = ['no', 'nope', 'not interested', 'no thanks', 'no thank you', '
 const AVAIL_KEYWORDS = ['mornings', 'afternoons', 'evenings', 'weekdays', 'weekends', 'usually home', 'home in the morning', 'home in the afternoon', 'home in the evening', 'usually available', 'generally available', 'after work', 'before noon', 'home after', 'home before']
 const SPECIFIC_DATE_RE = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|june|july|august|september|october|november|december|\d+\/\d+|\d+(th|st|nd|rd)\b)/i
 
-function preClassifyIntent(msg: string): { type: 'confirmed' | 'declined' } | { type: 'gave_availability'; availability: string } | null {
+export function preClassifyIntent(msg: string): { type: 'confirmed' | 'declined' } | { type: 'gave_availability'; availability: string } | null {
   const lower = msg.toLowerCase().trim().replace(/[.!]+$/, '')
   if (CLEAR_YES.includes(lower)) return { type: 'confirmed' }
   if (CLEAR_NO.includes(lower)) return { type: 'declined' }
