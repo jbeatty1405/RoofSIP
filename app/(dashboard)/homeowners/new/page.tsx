@@ -2,8 +2,10 @@
 
 import { createClient } from '@/app/_lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
+
+type AddressSuggestion = { address: string; zipCode: string }
 
 export default function NewHomeownerPage() {
   const router = useRouter()
@@ -16,6 +18,11 @@ export default function NewHomeownerPage() {
   const [previews, setPreviews] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [activeSuggestion, setActiveSuggestion] = useState(-1)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addressRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     async function loadMarkets() {
@@ -30,6 +37,49 @@ export default function NewHomeownerPage() {
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
+  }
+
+  const fetchSuggestions = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (q.length < 4) { setSuggestions([]); return }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/address-suggest?q=${encodeURIComponent(q)}`)
+        const data: AddressSuggestion[] = await res.json()
+        setSuggestions(data)
+        setShowSuggestions(data.length > 0)
+        setActiveSuggestion(-1)
+      } catch { /* ignore */ }
+    }, 300)
+  }, [])
+
+  function handleAddressChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value
+    set('address', val)
+    fetchSuggestions(val)
+  }
+
+  function selectSuggestion(s: AddressSuggestion) {
+    setForm(f => ({ ...f, address: s.address, zipCode: s.zipCode }))
+    setSuggestions([])
+    setShowSuggestions(false)
+    setActiveSuggestion(-1)
+  }
+
+  function handleAddressKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || !suggestions.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveSuggestion(i => Math.min(i + 1, suggestions.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveSuggestion(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' && activeSuggestion >= 0) {
+      e.preventDefault()
+      selectSuggestion(suggestions[activeSuggestion])
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false)
+    }
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -137,9 +187,36 @@ export default function NewHomeownerPage() {
           <label htmlFor="ho-phone" className="block text-sm font-medium text-zinc-300 mb-1.5">Phone number</label>
           <input id="ho-phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+1 (555) 000-0000" className={inputClass} />
         </div>
-        <div>
+        <div className="relative">
           <label htmlFor="ho-address" className="block text-sm font-medium text-zinc-300 mb-1.5">Address</label>
-          <input id="ho-address" type="text" value={form.address} onChange={e => set('address', e.target.value)} required placeholder="123 Main St, Tucson, AZ" className={inputClass} />
+          <input
+            id="ho-address"
+            ref={addressRef}
+            type="text"
+            value={form.address}
+            onChange={handleAddressChange}
+            onKeyDown={handleAddressKeyDown}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            required
+            placeholder="123 Main St, Tucson, AZ"
+            className={inputClass}
+            autoComplete="off"
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="absolute z-50 left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden">
+              {suggestions.map((s, i) => (
+                <li
+                  key={i}
+                  onMouseDown={() => selectSuggestion(s)}
+                  className={`px-3.5 py-2.5 text-sm cursor-pointer transition-colors ${i === activeSuggestion ? 'bg-sky-500/20 text-sky-300' : 'text-zinc-300 hover:bg-zinc-700'}`}
+                >
+                  {s.address}
+                  {s.zipCode && <span className="ml-2 text-xs text-zinc-500">{s.zipCode}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div>
           <label htmlFor="ho-zip" className="block text-sm font-medium text-zinc-300 mb-1.5">ZIP code</label>
