@@ -25,6 +25,7 @@ vi.mock('@/app/_lib/twilio', () => ({
   getTwilioClient: vi.fn(() => ({
     messages: { create: mockTwilioCreate },
   })),
+  buildIntroSms: vi.fn().mockReturnValue('Test intro SMS'),
 }))
 
 vi.mock('@/app/_lib/schedule', () => ({
@@ -108,6 +109,7 @@ describe('POST /api/homeowners', () => {
       address: '123 Main St',
       zipCode: '85001',
       photoUrls: [],
+      tcpaConsent: true,
     }))
     expect(res.status).toBe(200)
     const json = await res.json()
@@ -124,6 +126,7 @@ describe('POST /api/homeowners', () => {
       phone: '16025551234',
       address: '456 Oak Ave',
       zipCode: '85001',
+      tcpaConsent: true,
     }))
     expect(res.status).toBe(200)
     expect(mockTwilioCreate).toHaveBeenCalledWith(
@@ -153,6 +156,7 @@ describe('POST /api/homeowners', () => {
       phone: '6025551234',
       address: '123 Main St',
       zipCode: '85001',
+      tcpaConsent: true,
     }))
     expect(res.status).toBe(200)
     const json = await res.json()
