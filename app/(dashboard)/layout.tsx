@@ -59,6 +59,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('subscription_status')
+    .eq('id', user.id)
+    .single()
+  if (profile?.subscription_status !== 'active') redirect('/subscribe')
+
   const { count: unreadCount } = await supabase
     .from('notifications')
     .select('*', { count: 'exact', head: true })

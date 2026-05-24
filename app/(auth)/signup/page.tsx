@@ -50,7 +50,7 @@ export default function SignupPage() {
           </h2>
           <div className="flex flex-col gap-3">
             {[
-              '60-day free trial — no credit card required',
+              '$20/month — cancel anytime',
               'Set up in under 10 minutes',
               'Works on any phone, any calendar',
             ].map((item, i) => (
@@ -76,7 +76,7 @@ export default function SignupPage() {
           </div>
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-zinc-900">Create account</h1>
-            <p className="text-zinc-500 text-sm mt-1">Start your 60-day free trial</p>
+            <p className="text-zinc-500 text-sm mt-1">$20/month after setup</p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -137,12 +137,8 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full bg-sky-500 hover:bg-sky-600 text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors mt-1"
             >
-              {loading ? 'Creating account...' : 'Start free trial'}
+              {loading ? 'Creating account...' : 'Create account'}
             </button>
-
-            <p className="text-center text-xs text-zinc-400">
-              No credit card required · Cancel anytime
-            </p>
           </form>
 
           <p className="text-center text-sm text-zinc-500 mt-4">
