@@ -272,13 +272,16 @@ export async function POST(request: NextRequest) {
     let message: string
     let proposedSlot: Date | null = null
 
-    if (!market) {
+    if (!market || !market.auto_schedule) {
       message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
+      const noScheduleReason = !market
+        ? 'No schedule set'
+        : `Auto-schedule is off for ${market.name}`
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,
         type: 'hot_lead',
-        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. No schedule set — reach out to book their free inspection. Call: ${homeowner.phone}`,
+        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. ${noScheduleReason} — reach out to book their free inspection. Call: ${homeowner.phone}`,
       })
     } else {
       proposedSlot = await getNextAvailableSlot(supabase, market, profile.id)
@@ -341,6 +344,12 @@ export async function POST(request: NextRequest) {
           proposed_slot: proposedSlot.toISOString(),
           slots: [proposedSlot.toISOString()],
           status: 'awaiting_ho_reply',
+        }, { onConflict: 'homeowner_id' })
+      } else if (market && !market.auto_schedule) {
+        await supabase.from('pending_bookings').upsert({
+          homeowner_id: homeowner.id,
+          roofer_id: homeowner.roofer_id,
+          status: 'awaiting_homeowner',
         }, { onConflict: 'homeowner_id' })
       }
 
