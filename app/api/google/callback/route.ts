@@ -1,5 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import { exchangeCodeForTokens } from '@/app/_lib/google'
+import { encryptToken } from '@/app/_lib/token-crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -21,12 +22,13 @@ export async function GET(request: NextRequest) {
   }
 
   const tokens = await exchangeCodeForTokens(code)
+  if (!tokens.access_token) return NextResponse.redirect(`${origin}/settings?error=google`)
 
   await supabase
     .from('profiles')
     .update({
-      google_access_token: tokens.access_token,
-      google_refresh_token: tokens.refresh_token ?? undefined,
+      google_access_token: encryptToken(tokens.access_token),
+      google_refresh_token: tokens.refresh_token ? encryptToken(tokens.refresh_token) : null,
       google_calendar_id: 'primary',
     })
     .eq('id', user.id)

@@ -2,6 +2,7 @@ import { createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildBookingConfirmationSms } from '@/app/_lib/twilio'
 import { addCalendarEvent } from '@/app/_lib/google'
 import { verifyBookingToken } from '@/app/_lib/booking-token'
+import { decryptToken } from '@/app/_lib/token-crypto'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -43,8 +44,8 @@ export async function POST(request: NextRequest) {
   if (profile?.google_access_token && profile?.google_calendar_id) {
     try {
       googleEventId = await addCalendarEvent({
-        accessToken: profile.google_access_token,
-        refreshToken: profile.google_refresh_token,
+        accessToken: decryptToken(profile.google_access_token),
+        refreshToken: profile.google_refresh_token ? decryptToken(profile.google_refresh_token) : '',
         calendarId: profile.google_calendar_id,
         summary: `Roof inspection — ${homeowner.name}`,
         description: `Address: ${homeowner.address}\nPhone: ${homeowner.phone}`,
