@@ -1,11 +1,41 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Logo from '@/app/_components/Logo'
 
 export default function SubscribePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activating, setActivating] = useState(false)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  const pollForActivation = useCallback(async () => {
+    setActivating(true)
+    const deadline = Date.now() + 30_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000))
+      try {
+        const res = await fetch('/api/subscription-status')
+        if (res.ok) {
+          const { active } = await res.json()
+          if (active) {
+            router.replace('/dashboard')
+            return
+          }
+        }
+      } catch {}
+    }
+    // Timed out — still redirect, they can refresh
+    router.replace('/dashboard')
+  }, [router])
+
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      pollForActivation()
+    }
+  }, [searchParams, pollForActivation])
 
   async function handleSubscribe() {
     setLoading(true)
@@ -18,6 +48,21 @@ export default function SubscribePage() {
       setError(err ?? 'Could not start checkout. Try again.')
       setLoading(false)
     }
+  }
+
+  if (activating) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6">
+        <div className="mb-10">
+          <Logo size="lg" />
+        </div>
+        <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+          <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-white mb-2">Activating your subscription…</h2>
+          <p className="text-zinc-500 text-sm">This takes a few seconds. You'll be redirected automatically.</p>
+        </div>
+      </div>
+    )
   }
 
   return (

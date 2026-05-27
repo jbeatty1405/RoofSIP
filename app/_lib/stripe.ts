@@ -12,8 +12,8 @@ export async function createCheckoutSession(customerId: string, userId: string):
     subscription_data: {
       trial_period_days: 60,
     },
-    success_url: `${process.env.NEXTAUTH_URL}/settings?success=stripe`,
-    cancel_url: `${process.env.NEXTAUTH_URL}/settings`,
+    success_url: `${process.env.NEXTAUTH_URL}/subscribe?success=true`,
+    cancel_url: `${process.env.NEXTAUTH_URL}/subscribe`,
     metadata: { userId },
   })
   return session.url!
