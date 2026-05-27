@@ -4,6 +4,7 @@ import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms,
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
+import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
@@ -73,6 +74,10 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = await createServiceClient()
+
+  // Prevent more than 2 executions per hour even with a valid secret
+  const cronAllowed = await checkRateLimit(supabase, null, 'cron_weather', 2, 3600 * 1000)
+  if (!cronAllowed) return NextResponse.json({ skipped: true, reason: 'cron_rate_limited' })
   const twilio = getTwilioClient()
 
   // Deferred intro texts: homeowners added during quiet hours, not yet texted

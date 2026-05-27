@@ -1,5 +1,6 @@
-import { createClient } from '@/app/_lib/supabase/server'
+import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
 import { isSameOrigin } from '@/app/_lib/csrf'
+import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 
@@ -26,6 +27,10 @@ export async function POST(request: NextRequest) {
   const rawType = String(body.type ?? '').trim()
 
   if (!rawMessage) return NextResponse.json({ error: 'Message required' }, { status: 400 })
+
+  const service = await createServiceClient()
+  const allowed = await checkRateLimit(service, user.id, 'feedback', 5, 24 * 3600 * 1000)
+  if (!allowed) return NextResponse.json({ error: 'Too many submissions. Try again tomorrow.' }, { status: 429 })
   if (rawMessage.length > 2000) return NextResponse.json({ error: 'Message too long' }, { status: 400 })
   if (rawType.length > 50) return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
 

@@ -1,4 +1,5 @@
-import { createClient } from '@/app/_lib/supabase/server'
+import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,10 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new NextResponse('Unauthorized', { status: 401 })
+
+  const service = await createServiceClient()
+  const allowed = await checkRateLimit(service, user.id, 'export', 10, 3600 * 1000)
+  if (!allowed) return new NextResponse('Export rate limit reached. Try again in an hour.', { status: 429 })
 
   const { data: logs } = await supabase
     .from('sms_logs')

@@ -1,5 +1,33 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+/**
+ * Check and record a rate-limited action against `rate_limit_events`.
+ * Requires service-role client (table is RLS-locked to service role only).
+ * Returns true if the action is allowed, false if the limit is exceeded.
+ */
+export async function checkRateLimit(
+  supabase: SupabaseClient,
+  userId: string | null,
+  action: string,
+  limit: number,
+  windowMs: number,
+): Promise<boolean> {
+  const since = new Date(Date.now() - windowMs).toISOString()
+  const base = supabase
+    .from('rate_limit_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('action', action)
+    .gte('created_at', since)
+  const { count } = userId
+    ? await base.eq('user_id', userId)
+    : await base.is('user_id', null)
+  if ((count ?? 0) >= limit) return false
+  await supabase.from('rate_limit_events').insert(
+    userId ? { user_id: userId, action } : { action }
+  )
+  return true
+}
+
 export async function homeownerCreatesLast24h(
   supabase: SupabaseClient,
   rooferId: string,
