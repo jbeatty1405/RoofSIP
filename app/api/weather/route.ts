@@ -105,18 +105,25 @@ export async function POST(request: NextRequest) {
       if (!profile || profile.subscription_status !== 'active') continue
       const msg = buildIntroSms(profile.pm_name ?? 'Your contractor', h.name, profile.company_name ?? undefined)
       try {
-        await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: h.phone })
-        await supabase.from('sms_logs').insert({
+        const sent = await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: h.phone })
+        const { error: logErr } = await supabase.from('sms_logs').insert({
           roofer_id: h.roofer_id,
           homeowner_id: h.id,
           message: msg,
+          twilio_sid: sent.sid,
           direction: 'outbound',
-          status: 'sent',
+          status: sent.status,
           message_type: 'intro',
         })
-        introSent++
-      } catch (err) {
+        if (logErr) console.error(`sms_logs insert failed for intro to ${h.phone}:`, logErr)
+        else introSent++
+      } catch (err: any) {
         console.error(`Deferred opt-in SMS failed to ${h.phone}:`, err)
+        // 21211/21612/21614 = invalid/unreachable number — stop retrying
+        const unrecoverable = [21211, 21612, 21614, 21408, 21610]
+        if (unrecoverable.includes(err?.code)) {
+          await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', h.id)
+        }
       }
     }
   }
