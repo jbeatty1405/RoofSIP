@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
       const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home.`
-      await sendSms(twilio, fromPhone, confirmation, toPhone)
+      await sendSms(twilio, fromPhone, confirmation)
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: confirmation, direction: 'outbound', status: 'sent', message_type: 'opt_in_confirmation' })
       return new NextResponse('', { status: 200 })
     }
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. ${pmFirst} set you up for a free roof inspection if anything hits near your home. Reply YES or STOP to opt out.`
     }
 
-    await sendSms(twilio, fromPhone, reply, toPhone)
+    await sendSms(twilio, fromPhone, reply)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent', message_type: 'reply' })
     return new NextResponse('', { status: 200 })
   }
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
   // TCPA quiet hours: acknowledge receipt but don't send AI scheduling content
   if (isQuietHours()) {
     const ack = `Got your message! ${pmFirst} will follow up with you during business hours.`
-    await sendSms(twilio, fromPhone, ack, toPhone)
+    await sendSms(twilio, fromPhone, ack)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: ack, direction: 'outbound', status: 'sent', message_type: 'reply' })
 
     // Act on unambiguous intent silently — no reply to HO to stay TCPA-compliant
@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
       if (existingHandoff) return new NextResponse('', { status: 200 })
 
       const handoff = `${hoFirst}, sounds like this might be easier over the phone! ${pmFirst} will give you a call to get a time locked in.`
-      await sendSms(twilio, fromPhone, handoff, toPhone)
+      await sendSms(twilio, fromPhone, handoff)
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: handoff, direction: 'outbound', status: 'sent', message_type: 'handoff' })
       await supabase.from('notifications').insert({
         roofer_id: homeowner.roofer_id,
@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
     ])
   } catch {
     const fallback = `Got your message! ${pmFirst} will follow up with you shortly.`
-    await sendSms(twilio, fromPhone, fallback, toPhone)
+    await sendSms(twilio, fromPhone, fallback)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: fallback, direction: 'outbound', status: 'sent', message_type: 'reply' })
     return new NextResponse('', { status: 200 })
   }
@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
   // Cap at 320 chars (2 SMS segments) to control costs
   const safeResponse = aiResponse.length > 320 ? aiResponse.slice(0, 317) + '...' : aiResponse
 
-  await sendSms(twilio, fromPhone, safeResponse, toPhone)
+  await sendSms(twilio, fromPhone, safeResponse)
   await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: safeResponse, direction: 'outbound', status: 'sent', message_type: 'reply' })
 
   // Act on intent
