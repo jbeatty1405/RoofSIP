@@ -1,5 +1,5 @@
 import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
-import { getTwilioClient, buildIntroSms } from '@/app/_lib/twilio'
+import { getTwilioClient, buildIntroSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { homeownerCreatesLast24h, HOMEOWNER_DAILY_LIMIT } from '@/app/_lib/rate-limit'
 import { isSameOrigin } from '@/app/_lib/csrf'
@@ -82,7 +82,9 @@ export async function POST(request: NextRequest) {
   const introMsg = buildIntroSms(pmName, name, profile?.company_name ?? undefined)
 
   let smsError: string | null = null
-  try {
+  if (await isMonthlySmsCapped()) {
+    smsError = 'monthly_sms_cap'
+  } else try {
     const twilio = getTwilioClient()
     await twilio.messages.create({
       body: introMsg,

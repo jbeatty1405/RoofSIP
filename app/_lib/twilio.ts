@@ -1,10 +1,32 @@
 import twilio from 'twilio'
+import { createServiceClient } from '@/app/_lib/supabase/server'
 
 export function getTwilioClient() {
   return twilio(
     process.env.TWILIO_ACCOUNT_SID!,
     process.env.TWILIO_AUTH_TOKEN!
   )
+}
+
+// Hard cap: 4,000 outbound SMS/month ≈ $31.60 variable + ~$3 fixed = ~$35 total
+// Keeps worst-case runaway well under $50/month.
+const MONTHLY_SMS_CAP = 4000
+
+export async function isMonthlySmsCapped(): Promise<boolean> {
+  try {
+    const supabase = await createServiceClient()
+    const start = new Date()
+    start.setDate(1)
+    start.setHours(0, 0, 0, 0)
+    const { count } = await supabase
+      .from('sms_logs')
+      .select('id', { count: 'exact', head: true })
+      .eq('direction', 'outbound')
+      .gte('sent_at', start.toISOString())
+    return (count ?? 0) >= MONTHLY_SMS_CAP
+  } catch {
+    return false // fail open so a DB hiccup doesn't silently kill all SMS
+  }
 }
 
 export function cleanCompanyName(raw: string): string {

@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { geocodeZip, getAlertsForPoint } from '@/app/_lib/noaa'
-import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms } from '@/app/_lib/twilio'
+import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
@@ -52,6 +52,11 @@ export async function POST(request: NextRequest) {
   }
 
   if (isQuietHours()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
+
+  if (await isMonthlySmsCapped()) {
+    console.error('[weather] Monthly SMS cap reached — all sends blocked for the rest of this month')
+    return NextResponse.json({ skipped: true, reason: 'monthly_sms_cap' })
+  }
 
   const supabase = await createServiceClient()
   const twilio = getTwilioClient()
