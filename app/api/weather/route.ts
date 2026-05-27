@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       if (!profile || profile.subscription_status !== 'active') continue
       const msg = buildIntroSms(profile.pm_name ?? 'Your contractor', h.name, profile.company_name ?? undefined)
       try {
-        await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: h.phone })
+        await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: h.phone })
         await supabase.from('sms_logs').insert({
           roofer_id: h.roofer_id,
           homeowner_id: h.id,
@@ -322,7 +322,7 @@ export async function POST(request: NextRequest) {
     try {
       const msg = await twilio.messages.create({
         body: message,
-        from: process.env.TWILIO_PHONE_NUMBER!,
+        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
         to: homeowner.phone,
       })
 

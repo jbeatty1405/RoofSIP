@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const service = await createServiceClient()
     const twilio = getTwilioClient()
-    await twilio.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER!, to: homeowner.phone })
+    await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: homeowner.phone })
     await service.from('sms_logs').insert({
       roofer_id: user.id,
       homeowner_id: booking.homeowner_id,

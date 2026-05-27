@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const twilio = getTwilioClient()
     await twilio.messages.create({
       body: introMsg,
-      from: process.env.TWILIO_PHONE_NUMBER!,
+      messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
       to: phone,
     })
     await service.from('sms_logs').insert({

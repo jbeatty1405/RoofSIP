@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
   try {
     await twilio.messages.create({
       body: confirmationMsg,
-      from: process.env.TWILIO_PHONE_NUMBER!,
+      messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
       to: homeowner.phone,
     })
     await supabase.from('sms_logs').insert({

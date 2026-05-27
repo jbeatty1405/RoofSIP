@@ -6,9 +6,9 @@ import { isQuietHours } from '@/app/_lib/schedule'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
-async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string, from?: string) {
+async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string) {
   try {
-    await twilio.messages.create({ body, from: from ?? process.env.TWILIO_PHONE_NUMBER!, to })
+    await twilio.messages.create({ body, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to })
   } catch (err) {
     console.error(`SMS send failed to ${to}:`, err)
   }
