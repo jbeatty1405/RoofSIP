@@ -7,7 +7,7 @@ Before every deploy, all of the following must be green. Use `/verify-deploy` to
 ### Pre-flight
 - [ ] All required env vars present
 - [ ] No whitespace corruption in `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `TWILIO_AUTH_TOKEN`
-- [ ] Stripe key is TEST mode (live cutover blocked until RoofSIP LLC + EIN + bank account exist)
+- [ ] Stripe key is LIVE mode (cutover completed 2026-05-27; RoofSIP LLC formed, Chase ••••8195)
 - [ ] Supabase URL is `https://bzdkftdaclmrblyhoweo.supabase.co`
 - [ ] `npx tsc --noEmit` exits clean
 
@@ -62,6 +62,6 @@ Full list: `~/.claude/projects/-Users-justinbeatty/memory/roofsip_audit_2026_05_
 
 ## Critical notes
 
-- Stripe MUST stay in TEST mode — RoofSIP LLC not yet formed; do not switch to live keys
+- Stripe is in LIVE mode as of 2026-05-27 — use `sk_live_` / `pk_live_` keys and price `price_1TbmgoGzvPAhHu2dEL9RfwjV`
 - Whitespace corruption in Supabase URL breaks SSR auth — add `.replace(/\s/g, '')` to URL reads
 - Do NOT use the Jax Liens Stripe account (`acct_1TP7eZAjpHsIP1jP`) for RoofSIP
