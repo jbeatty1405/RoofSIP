@@ -45,6 +45,10 @@ async function buildGeoCache(
   return cache
 }
 
+// Hard limits per cron execution — prevents a single bad run from blasting everyone
+const MAX_STORM_ALERTS_PER_RUN = 50
+const MAX_INTRO_SMS_PER_RUN = 50
+
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -77,8 +81,10 @@ export async function POST(request: NextRequest) {
       .eq('direction', 'outbound')
 
     const alreadySentIds = new Set(existingLogs?.map((l: any) => l.homeowner_id))
+    let introSent = 0
 
     for (const h of uncontacted as any[]) {
+      if (introSent >= MAX_INTRO_SMS_PER_RUN) break
       if (alreadySentIds.has(h.id)) continue
       const profile = h.profiles
       if (!profile || profile.subscription_status !== 'active') continue
@@ -93,6 +99,7 @@ export async function POST(request: NextRequest) {
           status: 'sent',
           message_type: 'intro',
         })
+        introSent++
       } catch (err) {
         console.error(`Deferred opt-in SMS failed to ${h.phone}:`, err)
       }
@@ -232,20 +239,24 @@ export async function POST(request: NextRequest) {
     .eq('direction', 'outbound')
   const sentAlertSet = new Set((sentAlertLogs ?? []).map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
-  // Fallback dedup for alerts without an ID
-  const today = new Date().toISOString().slice(0, 10)
-  const { data: todayLogs } = await supabase
+  // 24h cooldown: never send a storm alert to the same homeowner within 24 hours,
+  // regardless of alert ID — prevents multiple hits if NOAA issues new alerts rapidly.
+  const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  const { data: recentAlertLogs } = await supabase
     .from('sms_logs')
     .select('homeowner_id')
     .in('homeowner_id', activeHomeowners.map((h: any) => h.id))
     .eq('direction', 'outbound')
-    .gte('sent_at', `${today}T00:00:00Z`)
-  const sentTodaySet = new Set(todayLogs?.map((l: any) => l.homeowner_id))
+    .eq('message_type', 'storm_alert')
+    .gte('sent_at', cutoff24h)
+  const sentLast24hSet = new Set(recentAlertLogs?.map((l: any) => l.homeowner_id))
 
   const templateCache: Record<string, any[]> = {}
   let totalSent = 0
 
   for (const homeowner of activeHomeowners as any[]) {
+    if (totalSent >= MAX_STORM_ALERTS_PER_RUN) break
+
     const profile = homeowner.profiles
     if (!profile || profile.subscription_status !== 'active') continue
     if (profile.sms_count_this_month >= profile.sms_cap) continue
@@ -253,13 +264,14 @@ export async function POST(request: NextRequest) {
     const alerts = alertsByZip[homeowner.zip_code] ?? []
     if (!alerts.length) continue
 
+    // 24h cooldown: never text the same homeowner twice within 24 hours
+    if (sentLast24hSet.has(homeowner.id)) continue
+
     const alert = alerts[0]
     const alertId = alert.id || null
 
-    const alreadySent = alertId
-      ? sentAlertSet.has(`${homeowner.id}:${alertId}`)
-      : sentTodaySet.has(homeowner.id)
-    if (alreadySent) continue
+    // Also dedupe on specific NOAA alert ID (handles same alert recurring in feed)
+    if (alertId && sentAlertSet.has(`${homeowner.id}:${alertId}`)) continue
 
     if (!templateCache[profile.id]) {
       const { data: tmpl } = await supabase
