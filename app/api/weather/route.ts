@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
-import { geocodeZip, getAlertsForPoint } from '@/app/_lib/noaa'
+import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
@@ -8,6 +8,16 @@ import { NextRequest, NextResponse } from 'next/server'
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
   return body.replace(/{{(\w+)}}/g, (_, key) => vars[key] ?? '')
+}
+
+function extractHailInches(text: string): number {
+  const m = text.match(/hail[^.]*?(\d+(?:\.\d+)?)\s*in(?:ch(?:es)?)?/i)
+  return m ? parseFloat(m[1]) : 0
+}
+
+// ≥ 0.25" (quarter-size) hail bypasses cooldown — roof-damaging threshold
+function isSevereHail(alert: WeatherAlert): boolean {
+  return extractHailInches(alert.description) >= 0.25 || extractHailInches(alert.headline) >= 0.25
 }
 
 function pickTemplate(templates: any[], stormType: string): string | null {
@@ -106,7 +116,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Follow-up: homeowners who got a storm alert 48–96h ago with no reply
+  // Follow-up: homeowners who got a storm alert 48–96h ago with no reply.
+  // Collected here, inserted after the storm loop so we can skip anyone who
+  // gets a fresh storm alert this run (new alert supersedes the follow-up).
   const followUpStart = new Date(Date.now() - 96 * 3600 * 1000).toISOString()
   const followUpEnd = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
 
@@ -117,10 +129,12 @@ export async function POST(request: NextRequest) {
     .eq('sms_confirmed', true)
     .limit(10000)
 
+  type FollowUp = { roofer_id: string; homeowner_id: string; name: string; phone: string }
+  const pendingFollowUps: FollowUp[] = []
+
   if ((optedInHomeowners ?? []).length > 0) {
     const optedInIds = (optedInHomeowners ?? []).map((h: any) => h.id)
 
-    // Filter to storm_alert messages only so intro texts don't trigger follow-ups
     const { data: windowAlertLogs } = await supabase
       .from('sms_logs')
       .select('homeowner_id, sent_at')
@@ -161,13 +175,7 @@ export async function POST(request: NextRequest) {
         if (!alertTime) continue
         if ((inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
         if ((outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
-
-        await supabase.from('notifications').insert({
-          roofer_id: h.roofer_id,
-          homeowner_id: h.id,
-          type: 'call_needed',
-          message: `${h.name} got a storm alert 2 days ago and hasn't responded — give them a call. ${h.phone} · ${h.address}`,
-        })
+        pendingFollowUps.push({ roofer_id: h.roofer_id, homeowner_id: h.id, name: h.name, phone: h.phone })
       }
     }
   }
@@ -228,33 +236,39 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!activeHomeowners?.length) return NextResponse.json({ sent: 0 })
-
   // Alert dedup: skip homeowners who already received this specific NOAA alert
+  const activeIds = (activeHomeowners ?? []).map((h: any) => h.id)
   const { data: sentAlertLogs } = await supabase
     .from('sms_logs')
     .select('homeowner_id, noaa_alert_id')
-    .in('homeowner_id', activeHomeowners.map((h: any) => h.id))
+    .in('homeowner_id', activeIds)
     .not('noaa_alert_id', 'is', null)
     .eq('direction', 'outbound')
   const sentAlertSet = new Set((sentAlertLogs ?? []).map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
-  // 24h cooldown: never send a storm alert to the same homeowner within 24 hours,
-  // regardless of alert ID — prevents multiple hits if NOAA issues new alerts rapidly.
-  const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+  // 48h cooldown — prevents multiple hits from the same lingering storm system.
+  // Severe hail (≥ 0.25") bypasses this so a genuinely damaging new storm still fires.
+  const cutoff48h = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
   const { data: recentAlertLogs } = await supabase
     .from('sms_logs')
     .select('homeowner_id')
-    .in('homeowner_id', activeHomeowners.map((h: any) => h.id))
+    .in('homeowner_id', activeIds)
     .eq('direction', 'outbound')
     .eq('message_type', 'storm_alert')
-    .gte('sent_at', cutoff24h)
-  const sentLast24hSet = new Set(recentAlertLogs?.map((l: any) => l.homeowner_id))
+    .gte('sent_at', cutoff48h)
+  const sentLast48hSet = new Set(recentAlertLogs?.map((l: any) => l.homeowner_id))
+
+  // Cross-contractor dedup: same phone number across multiple roofer accounts
+  const hoById = new Map((activeHomeowners as any[]).map((h: any) => [h.id, h]))
+  const sentLast48hPhones = new Set(
+    [...sentLast48hSet].map(id => hoById.get(id)?.phone).filter(Boolean)
+  )
 
   const templateCache: Record<string, any[]> = {}
+  const stormAlertedThisRun = new Set<string>()
   let totalSent = 0
 
-  for (const homeowner of activeHomeowners as any[]) {
+  for (const homeowner of (activeHomeowners ?? []) as any[]) {
     if (totalSent >= MAX_STORM_ALERTS_PER_RUN) break
 
     const profile = homeowner.profiles
@@ -264,8 +278,9 @@ export async function POST(request: NextRequest) {
     const alerts = alertsByZip[homeowner.zip_code] ?? []
     if (!alerts.length) continue
 
-    // 24h cooldown: never text the same homeowner twice within 24 hours
-    if (sentLast24hSet.has(homeowner.id)) continue
+    // 48h cooldown — bypass only for severe hail (≥ 0.25") on a fresh alert
+    const inCooldown = sentLast48hSet.has(homeowner.id) || sentLast48hPhones.has(homeowner.phone)
+    if (inCooldown && !alerts.some(isSevereHail)) continue
 
     const alert = alerts[0]
     const alertId = alert.id || null
@@ -370,11 +385,25 @@ export async function POST(request: NextRequest) {
         }, { onConflict: 'homeowner_id' })
       }
 
+      stormAlertedThisRun.add(homeowner.id)
+      sentLast48hPhones.add(homeowner.phone)
       await supabase.rpc('increment_sms_count', { p_id: profile.id })
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)
     }
+  }
+
+  // Process follow-ups now that we know who got a fresh storm alert this run.
+  // Skip any homeowner who just received a new storm alert — it supersedes the follow-up.
+  for (const fu of pendingFollowUps) {
+    if (stormAlertedThisRun.has(fu.homeowner_id)) continue
+    await supabase.from('notifications').insert({
+      roofer_id: fu.roofer_id,
+      homeowner_id: fu.homeowner_id,
+      type: 'call_needed',
+      message: `${fu.name} got a storm alert 2 days ago and hasn't responded — give them a call. ${fu.phone}`,
+    })
   }
 
   return NextResponse.json({ sent: totalSent })
