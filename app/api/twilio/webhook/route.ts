@@ -220,6 +220,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Inbound rate limit: if a homeowner sends more than 5 messages in the last hour,
+  // skip Claude and send a fallback — prevents API cost runaway from spam/loops.
+  const hourAgo = new Date(Date.now() - 3600 * 1000).toISOString()
+  const { count: inboundCount } = await supabase
+    .from('sms_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('homeowner_id', homeowner.id)
+    .eq('direction', 'inbound')
+    .gte('sent_at', hourAgo)
+  if ((inboundCount ?? 0) >= 5) {
+    const throttleMsg = `Got your message! ${pmFirst} will follow up with you soon.`
+    await sendSms(twilio, fromPhone, throttleMsg)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: throttleMsg, direction: 'outbound', status: 'sent', message_type: 'reply' })
+    return new NextResponse('', { status: 200 })
+  }
+
   // Claude with 7s timeout — Twilio webhook times out at 10s
   let aiResult: { response: string; intent: HoReplyIntent }
   try {

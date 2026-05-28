@@ -1,5 +1,4 @@
 import { createClient } from '@/app/_lib/supabase/server'
-import SubscribeBanner from './SubscribeBanner'
 import HaileyBanner from './HaileyBanner'
 import Link from 'next/link'
 
@@ -27,7 +26,6 @@ export default async function DashboardHome() {
     supabase.from('sms_logs').select('created_at').eq('roofer_id', user!.id).eq('direction', 'outbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
-  const isTrial = profile?.subscription_status !== 'active'
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -41,8 +39,6 @@ export default async function DashboardHome() {
 
   return (
     <div>
-      {isTrial && <SubscribeBanner />}
-
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-8">
         <div>

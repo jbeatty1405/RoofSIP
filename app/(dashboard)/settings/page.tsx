@@ -84,9 +84,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           {profile?.subscription_status === 'active' && profile?.stripe_subscription_id && (
             <CancelSubscriptionButton />
           )}
-          {!profile?.stripe_customer_id && (
-            <p className="text-xs text-zinc-600">No subscription on file. <a href="/settings?checkout=1" className="text-sky-500 hover:underline">Subscribe to get started.</a></p>
-          )}
         </div>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">

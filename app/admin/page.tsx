@@ -1,0 +1,21 @@
+import { createClient } from '@/app/_lib/supabase/server'
+import { redirect } from 'next/navigation'
+import AdminPanel from './AdminPanel'
+
+const ADMIN_USER_ID = '759e00cd-34ae-45c7-b56f-e8f8cf4eed36'
+
+export default async function AdminPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user || user.id !== ADMIN_USER_ID) redirect('/login')
+
+  return (
+    <div className="min-h-screen bg-zinc-950 p-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-2xl font-bold text-white mb-2">Admin</h1>
+        <p className="text-zinc-500 text-sm mb-8">Activate or deactivate contractor accounts.</p>
+        <AdminPanel />
+      </div>
+    </div>
+  )
+}
