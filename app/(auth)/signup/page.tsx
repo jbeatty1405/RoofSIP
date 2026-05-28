@@ -35,7 +35,7 @@ export default function SignupPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/login?message=Check your email to confirm your account')
+      router.push('/subscribe')
     }
   }
 

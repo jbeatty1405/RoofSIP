@@ -10,9 +10,6 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!user.email_confirmed_at) {
-    return NextResponse.json({ error: 'Confirm your email first' }, { status: 403 })
-  }
 
   const serviceClient = await createServiceClient()
   const { data: count, error: rlError } = await serviceClient.rpc('checkout_rate_limit', {
