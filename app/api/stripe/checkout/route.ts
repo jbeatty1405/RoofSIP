@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 const CHECKOUT_RATE_LIMIT = 5 // per hour per user
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -45,6 +45,7 @@ export async function POST(_request: NextRequest) {
       .eq('id', user.id)
   }
 
-  const url = await createCheckoutSession(customerId, user.id)
+  const appUrl = new URL(request.url).origin
+  const url = await createCheckoutSession(customerId, user.id, appUrl)
   return NextResponse.json({ url })
 }

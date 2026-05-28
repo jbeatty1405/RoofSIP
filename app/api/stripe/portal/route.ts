@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -19,6 +19,7 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({ error: 'No subscription on file' }, { status: 400 })
   }
 
-  const url = await createPortalSession(profile.stripe_customer_id)
+  const appUrl = new URL(request.url).origin
+  const url = await createPortalSession(profile.stripe_customer_id, appUrl)
   return NextResponse.json({ url })
 }

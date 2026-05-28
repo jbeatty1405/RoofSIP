@@ -61,10 +61,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_status')
+    .select('subscription_status, stripe_subscription_id')
     .eq('id', user.id)
     .single()
-  if (profile?.subscription_status !== 'active') redirect('/subscribe')
+  if (profile?.subscription_status !== 'active') {
+    // If checkout was completed but webhook hasn't fired yet, resume polling
+    if (profile?.stripe_subscription_id) {
+      redirect('/subscribe?success=true')
+    }
+    redirect('/subscribe')
+  }
 
   const { count: unreadCount } = await supabase
     .from('notifications')
