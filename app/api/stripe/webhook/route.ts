@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
+import { sendWelcomeEmail } from '@/app/_lib/email'
 import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (ok) {
-        await supabase
+        const { data: updatedProfile } = await supabase
           .from('profiles')
           .update({
             stripe_customer_id: customerId,
@@ -52,6 +53,13 @@ export async function POST(request: NextRequest) {
             subscription_status: 'active',
           })
           .eq('id', userId)
+          .select('pm_name')
+          .single()
+
+        sendWelcomeEmail({
+          to: authUser!.email!,
+          pmName: updatedProfile?.pm_name ?? undefined,
+        }).catch(err => console.error('[webhook] welcome email failed:', err))
       } else {
         console.error('Stripe webhook: customer/user mismatch', { userId, customerId })
       }
