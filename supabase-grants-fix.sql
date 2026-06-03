@@ -21,3 +21,11 @@ grant select on public.bookings to authenticated;
 -- scopes them to auth.uid() = roofer_id.
 grant select on public.pending_bookings to authenticated;
 grant select on public.sms_logs to authenticated;
+
+-- 2026-06-03 round 3 (adversarial pass): the app WRITES too, not just reads.
+-- homeowners + markets already had insert/update/delete grants; profiles did NOT
+-- have UPDATE -> Settings "Save" + push-token save returned 403 for every user.
+-- Column-scoped on purpose: granting blanket UPDATE would let a user set their
+-- own subscription_status='active' (payment bypass). Only the columns the app
+-- legitimately edits are granted. RLS already restricts to auth.uid() = id.
+grant update (pm_name, company_name, push_token) on public.profiles to authenticated;
