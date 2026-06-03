@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
-import { sendWelcomeEmail } from '@/app/_lib/email'
+import { sendWelcomeEmail, sendTrialEndingEmail } from '@/app/_lib/email'
 import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -63,6 +63,33 @@ export async function POST(request: NextRequest) {
       } else {
         console.error('Stripe webhook: customer/user mismatch', { userId, customerId })
       }
+    }
+  }
+
+  // Free-trial-ending reminder (CA ARL / ROSCA compliance). Stripe fires this ~3 days
+  // before a trial converts to a paid subscription.
+  if (event.type === 'customer.subscription.trial_will_end') {
+    const subId = obj.id as string
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, pm_name')
+      .eq('stripe_subscription_id', subId)
+      .maybeSingle()
+
+    if (profile) {
+      const { data: { user: authUser } } = await supabase.auth.admin.getUserById(profile.id)
+      if (authUser?.email) {
+        const trialEndDate = obj.trial_end
+          ? new Date(obj.trial_end * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+          : 'soon'
+        sendTrialEndingEmail({
+          to: authUser.email,
+          pmName: profile.pm_name ?? undefined,
+          trialEndDate,
+        }).catch(err => console.error('[webhook] trial-ending email failed:', err))
+      }
+    } else {
+      console.error('[webhook] trial_will_end: no profile for subscription', subId)
     }
   }
 

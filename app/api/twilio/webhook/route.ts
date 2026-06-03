@@ -85,6 +85,14 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
   if (!inboundLog) return new NextResponse('', { status: 200 })
 
+  // HELP keyword — CTIA-required informational response, answered in any state/quiet hours
+  if (['help', 'info'].includes(messageLower)) {
+    const help = `RoofSIP: free roof storm alerts & inspection scheduling. Msg frequency varies; msg & data rates may apply. Reply STOP to cancel. Help: azroofsip@gmail.com`
+    await sendSms(twilio, fromPhone, help)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: help, direction: 'outbound', status: 'sent', message_type: 'reply' })
+    return new NextResponse('', { status: 200 })
+  }
+
   // Pre-opt-in: handle consent flow — always respond regardless of quiet hours
   if (!homeowner.sms_confirmed) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
@@ -93,7 +101,7 @@ export async function POST(request: NextRequest) {
     if (isOptIn) {
       await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
-      const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home.`
+      const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home. Msg frequency varies, msg & data rates may apply. Reply HELP for help, STOP to cancel.`
       await sendSms(twilio, fromPhone, confirmation)
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: confirmation, direction: 'outbound', status: 'sent', message_type: 'opt_in_confirmation' })
       return new NextResponse('', { status: 200 })

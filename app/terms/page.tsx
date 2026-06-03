@@ -62,10 +62,13 @@ export default function TermsPage() {
           <section>
             <h2 className="text-white text-lg font-semibold mb-2">5. Subscription and Billing</h2>
             <p>
-              RoofSIP is billed monthly. Plans include a 60-day free trial. After the trial,
-              your payment method will be charged at the then-current plan rate. You may cancel
-              at any time; cancellation takes effect at the end of the current billing period.
-              No refunds for partial months.
+              RoofSIP is an automatically renewing subscription billed at $20/month. Plans include a
+              60-day free trial with no charge during the trial period. We will send you an email reminder
+              before your free trial ends. Unless you cancel before the trial ends, your payment method will
+              be automatically charged $20/month (or the then-current plan rate), and your subscription will
+              continue to renew monthly until you cancel. You may cancel at any time from
+              Settings → Cancel Subscription; cancellation takes effect at the end of the current billing
+              period. No refunds for partial months.
             </p>
           </section>
 

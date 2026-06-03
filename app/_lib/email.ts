@@ -118,6 +118,20 @@ export async function sendWelcomeEmail({
       </div>
     </div>
 
+    <!-- Subscription terms (auto-renewal disclosure) -->
+    <div style="background:#18181b;border:1px solid #27272a;border-radius:14px;padding:20px;margin-bottom:32px">
+      <p style="margin:0 0 10px;font-size:11px;font-weight:700;color:#52525b;text-transform:uppercase;letter-spacing:1.5px">Your subscription</p>
+      <p style="margin:0 0 10px;font-size:13px;color:#a1a1aa;line-height:1.6">
+        You're on a <strong style="color:#f4f4f5">60-day free trial — no charge today</strong>. When the trial ends, your card is
+        <strong style="color:#f4f4f5">automatically charged $20/month</strong> and renews monthly until you cancel. We'll email you a reminder before your trial ends.
+      </p>
+      <p style="margin:0;font-size:13px;color:#71717a;line-height:1.6">
+        Cancel anytime at <a href="https://roofsip.vercel.app/settings" style="color:#0ea5e9;text-decoration:none">Settings → Cancel Subscription</a>.
+        Cancellation takes effect at the end of the current period. See our
+        <a href="https://roofsip.vercel.app/terms" style="color:#0ea5e9;text-decoration:none">Terms</a>.
+      </p>
+    </div>
+
     <!-- Footer -->
     <div style="border-top:1px solid #27272a;padding-top:20px">
       <p style="margin:0 0 4px;font-size:12px;color:#52525b">
@@ -125,6 +139,82 @@ export async function sendWelcomeEmail({
       </p>
       <p style="margin:0;font-size:12px;color:#3f3f46">
         RoofSIP · <a href="https://roofsip.vercel.app" style="color:#3f3f46">roofsip.vercel.app</a>
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>
+    `,
+  })
+}
+
+export async function sendTrialEndingEmail({
+  to,
+  pmName,
+  trialEndDate,
+  amount = '$20',
+}: {
+  to: string
+  pmName?: string
+  trialEndDate: string
+  amount?: string
+}) {
+  const firstName = pmName?.split(' ')[0] ?? 'there'
+  const settingsUrl = 'https://roofsip.vercel.app/settings'
+
+  await transporter.sendMail({
+    from: `RoofSIP <${process.env.GMAIL_USER}>`,
+    to,
+    subject: `Your RoofSIP free trial ends ${trialEndDate}`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <div style="max-width:560px;margin:0 auto;padding:40px 24px">
+
+    <div style="margin-bottom:32px">
+      <span style="font-size:22px;font-weight:900;color:#f4f4f5;letter-spacing:-0.5px">Roof<span style="color:#0ea5e9">SIP</span></span>
+    </div>
+
+    <div style="margin-bottom:28px">
+      <h1 style="margin:0 0 12px;font-size:26px;font-weight:800;color:#f4f4f5;line-height:1.25">
+        Heads up, ${firstName} — your free trial ends soon.
+      </h1>
+      <p style="margin:0;font-size:16px;color:#a1a1aa;line-height:1.6">
+        Just so there are no surprises: this is a reminder, not a charge.
+      </p>
+    </div>
+
+    <div style="background:#18181b;border:1px solid #27272a;border-radius:14px;padding:24px;margin-bottom:28px">
+      <p style="margin:0 0 6px;font-size:13px;color:#71717a">Free trial ends</p>
+      <p style="margin:0 0 18px;font-size:18px;font-weight:700;color:#f4f4f5">${trialEndDate}</p>
+      <p style="margin:0 0 6px;font-size:13px;color:#71717a">What happens then</p>
+      <p style="margin:0;font-size:15px;color:#f4f4f5;line-height:1.6">
+        Your card is automatically charged <strong>${amount}/month</strong>, and your subscription renews monthly until you cancel.
+      </p>
+    </div>
+
+    <p style="margin:0 0 24px;font-size:15px;color:#a1a1aa;line-height:1.6">
+      Nothing to do if you want to keep RoofSIP running — you're all set. If you'd rather not continue, you can cancel before
+      ${trialEndDate} and you won't be charged.
+    </p>
+
+    <div style="text-align:center;margin-bottom:28px">
+      <a href="${settingsUrl}" style="display:inline-block;background:#0ea5e9;color:white;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:15px;font-weight:700;letter-spacing:-0.2px">
+        Manage or cancel subscription →
+      </a>
+      <p style="margin:12px 0 0;font-size:12px;color:#52525b">Settings → Cancel Subscription · takes 10 seconds</p>
+    </div>
+
+    <div style="border-top:1px solid #27272a;padding-top:20px">
+      <p style="margin:0 0 4px;font-size:12px;color:#52525b">
+        Questions? Reply to this email — I read every one.
+      </p>
+      <p style="margin:0;font-size:12px;color:#3f3f46">
+        RoofSIP · <a href="https://roofsip.vercel.app" style="color:#3f3f46">roofsip.vercel.app</a> ·
+        <a href="https://roofsip.vercel.app/terms" style="color:#3f3f46">Terms</a>
       </p>
     </div>
 

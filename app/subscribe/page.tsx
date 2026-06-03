@@ -9,6 +9,7 @@ function SubscribeContent() {
   const [error, setError] = useState('')
   const [activating, setActivating] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
+  const [consented, setConsented] = useState(false)
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -50,6 +51,10 @@ function SubscribeContent() {
   }, [searchParams, pollForActivation, checkStatus, router])
 
   async function handleSubscribe() {
+    if (!consented) {
+      setError('Please acknowledge the subscription terms to continue.')
+      return
+    }
     setLoading(true)
     setError('')
     const res = await fetch('/api/stripe/checkout', { method: 'POST' })
@@ -127,6 +132,30 @@ function SubscribeContent() {
         </ul>
       </div>
 
+      {/* Auto-renewal disclosure (CA ARL / ROSCA) — clear & conspicuous, next to consent */}
+      <div className="bg-zinc-800/40 border border-zinc-700/60 rounded-lg px-4 py-3 mb-4">
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          <span className="text-zinc-200 font-semibold">No charge today.</span> After your 60-day free trial,
+          your card will be <span className="text-zinc-200 font-semibold">automatically charged $20/month</span> and
+          your subscription renews monthly until you cancel. We'll email a reminder before the trial ends.
+          Cancel anytime in Settings.
+        </p>
+      </div>
+
+      <label className="flex items-start gap-2.5 mb-4 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={consented}
+          onChange={e => setConsented(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-800 accent-sky-500"
+        />
+        <span className="text-xs text-zinc-400 leading-relaxed">
+          I understand my subscription auto-renews at $20/month after the 60-day free trial until I cancel, and I agree to the{' '}
+          <a href="/terms" target="_blank" className="text-sky-400 underline">Terms</a> and{' '}
+          <a href="/privacy" target="_blank" className="text-sky-400 underline">Privacy Policy</a>.
+        </span>
+      </label>
+
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3.5 py-2.5 text-sm text-red-400 mb-4">
           {error}
@@ -135,10 +164,10 @@ function SubscribeContent() {
 
       <button
         onClick={handleSubscribe}
-        disabled={loading}
-        className="w-full bg-sky-500 hover:bg-sky-600 text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-50 transition-colors"
+        disabled={loading || !consented}
+        className="w-full bg-sky-500 hover:bg-sky-600 text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? 'Loading...' : 'Subscribe — $20/mo'}
+        {loading ? 'Loading...' : 'Start free trial — then $20/mo'}
       </button>
 
       <p className="text-center text-xs text-zinc-600 mt-4">

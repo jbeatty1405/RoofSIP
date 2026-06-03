@@ -12,6 +12,13 @@ export async function createCheckoutSession(customerId: string, userId: string, 
     subscription_data: {
       trial_period_days: 60,
     },
+    // Auto-renewal disclosure shown on Stripe's hosted payment page (CA ARL / ROSCA).
+    custom_text: {
+      submit: {
+        message:
+          'Your 60-day free trial starts today — no charge now. After the trial, your card is automatically charged $20/month and renews monthly until you cancel. Cancel anytime in Settings.',
+      },
+    },
     success_url: `${appUrl}/subscribe?success=true`,
     cancel_url: `${appUrl}/subscribe`,
     metadata: { userId },
