@@ -1,5 +1,6 @@
 // Returns true if current time is outside TCPA-allowed SMS hours (8am–9pm MST).
-// Uses Arizona time (MST year-round, no DST).
+// 8am–9pm local is the federal TCPA window; homeowners are in Arizona, so we use
+// Arizona time (MST year-round, no DST).
 export function isQuietHours(): boolean {
   const h = parseInt(
     new Date().toLocaleString('en-US', {
