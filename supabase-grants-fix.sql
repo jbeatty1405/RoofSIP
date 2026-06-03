@@ -14,3 +14,10 @@ grant select, update on public.notifications to authenticated;
 
 -- Mobile reads bookings (id, status) only -> SELECT
 grant select on public.bookings to authenticated;
+
+-- 2026-06-03 round 2: exhaustive sweep of every table the mobile app reads
+-- (.from(...) in app/) found two more with the same missing grant. Both are
+-- read-only in the app (Home screen + homeowner detail + calendar). RLS already
+-- scopes them to auth.uid() = roofer_id.
+grant select on public.pending_bookings to authenticated;
+grant select on public.sms_logs to authenticated;
