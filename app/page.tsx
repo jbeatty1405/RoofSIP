@@ -45,7 +45,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Booking Confirmation',
-    desc: 'Homeowner replies YES → you get an email with the details and a one-click confirm. Nothing hits your calendar without your OK.',
+    desc: 'Homeowner replies YES → the appointment books automatically and you get an email with all the details. Just show up.',
   },
   {
     icon: (
