@@ -249,7 +249,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-sky-400 text-sm font-semibold uppercase tracking-widest mb-3">Everything you need</p>
-            <h2 className="text-3xl md:text-4xl font-bold text-white">Built for roofers. Not software people.</h2>
+            <h2 className="text-3xl md:text-4xl font-bold text-white">Built by roofers. Not software people.</h2>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((f) => (
