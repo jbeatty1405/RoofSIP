@@ -63,7 +63,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'TCPA Compliance Built In',
-    desc: 'Every homeowner entry requires a consent checkbox. Opt-outs are honored instantly. You\'re covered.',
+    desc: 'You record express consent before anyone gets a text — and opt-outs are honored instantly. You\'re covered.',
   },
   {
     icon: (
@@ -72,7 +72,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'Reply Tracking',
-    desc: 'See every YES, NO, and STOP in one place. Full SMS thread history per homeowner, opt-out rate on the dashboard.',
+    desc: 'See every YES, NO, and STOP in one place. Full SMS thread history per homeowner, opt-out count on the dashboard.',
   },
 ]
 
