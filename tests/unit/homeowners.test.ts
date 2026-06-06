@@ -26,6 +26,7 @@ vi.mock('@/app/_lib/twilio', () => ({
     messages: { create: mockTwilioCreate },
   })),
   buildIntroSms: vi.fn().mockReturnValue('Test intro SMS'),
+  isMonthlySmsCapped: vi.fn().mockResolvedValue(false),
 }))
 
 vi.mock('@/app/_lib/schedule', () => ({

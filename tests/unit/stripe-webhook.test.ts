@@ -25,13 +25,20 @@ vi.mock('@/app/_lib/supabase/server', () => ({
   }),
 }))
 
+vi.mock('@/app/_lib/email', () => ({
+  sendWelcomeEmail: vi.fn().mockResolvedValue(undefined),
+  sendTrialEndingEmail: vi.fn().mockResolvedValue(undefined),
+}))
+
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
 
-  mockEq.mockReturnThis()
   mockSingle.mockResolvedValue({ data: null, error: null })
   mockSelect.mockReturnValue({ eq: mockEq, single: mockSingle })
+  // .eq() can be followed by .select()/.single()/.eq() so both the
+  // select…eq…single and update…eq…select…single chains resolve.
+  mockEq.mockReturnValue({ select: mockSelect, single: mockSingle, eq: mockEq })
   mockUpdate.mockReturnValue({ eq: mockEq })
   mockFrom.mockReturnValue({ select: mockSelect, update: mockUpdate })
   mockGetUserById.mockResolvedValue({ data: { user: { email: 'test@example.com' } } })
