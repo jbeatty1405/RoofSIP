@@ -316,21 +316,29 @@ export async function POST(request: NextRequest) {
     let message: string
     let proposedSlot: Date | null = null
 
-    if (!market || !market.auto_schedule) {
-      message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
-      const noScheduleReason = !market
-        ? 'No schedule set'
-        : `Auto-schedule is off for ${market.name}`
-      await supabase.from('notifications').insert({
-        roofer_id: homeowner.roofer_id,
-        homeowner_id: homeowner.id,
-        type: 'hot_lead',
-        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. ${noScheduleReason} — reach out to book their free inspection. Call: ${homeowner.phone}`,
-      })
-    } else {
-      proposedSlot = await getNextAvailableSlot(supabase, market, profile.id)
-      const proposedTime = formatSlot(proposedSlot)
+    if (market && market.auto_schedule) {
+      // Reserve a unique slot BEFORE sending. The partial unique index on
+      // (roofer_id, proposed_slot) makes a racing reservation fail with 23505;
+      // on conflict we recompute the next open slot and retry — so two homeowners
+      // can never be offered (or booked into) the same time, even across
+      // overlapping cron runs.
+      for (let attempt = 0; attempt < 6 && !proposedSlot; attempt++) {
+        const slot = await getNextAvailableSlot(supabase, market, profile.id)
+        const { error: reserveErr } = await supabase.from('pending_bookings').upsert({
+          homeowner_id: homeowner.id,
+          roofer_id: homeowner.roofer_id,
+          proposed_slot: slot.toISOString(),
+          slots: [slot.toISOString()],
+          status: 'awaiting_ho_reply',
+        }, { onConflict: 'homeowner_id' })
+        if (!reserveErr) { proposedSlot = slot; break }
+        if (reserveErr.code !== '23505') { console.error('slot reserve failed:', reserveErr); break }
+        // 23505: slot just taken by a concurrent reservation — loop picks the next one
+      }
+    }
 
+    if (proposedSlot) {
+      const proposedTime = formatSlot(proposedSlot)
       if (profile.message_style) {
         try {
           message = await generateStormSms({
@@ -358,6 +366,18 @@ export async function POST(request: NextRequest) {
             })
           : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
       }
+    } else {
+      // No timed offer: auto-schedule off, no market, or no open slot could be reserved.
+      message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
+      const noScheduleReason = !market
+        ? 'No schedule set'
+        : (!market.auto_schedule ? `Auto-schedule is off for ${market.name}` : 'No open slot available')
+      await supabase.from('notifications').insert({
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'hot_lead',
+        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. ${noScheduleReason} — reach out to book their free inspection. Call: ${homeowner.phone}`,
+      })
     }
 
     // Cap at 320 chars (2 SMS segments) to control costs
@@ -381,15 +401,8 @@ export async function POST(request: NextRequest) {
         noaa_alert_id: alertId,
       })
 
-      if (proposedSlot) {
-        await supabase.from('pending_bookings').upsert({
-          homeowner_id: homeowner.id,
-          roofer_id: homeowner.roofer_id,
-          proposed_slot: proposedSlot.toISOString(),
-          slots: [proposedSlot.toISOString()],
-          status: 'awaiting_ho_reply',
-        }, { onConflict: 'homeowner_id' })
-      } else if (market && !market.auto_schedule) {
+      // Timed offers are already reserved above. Only the no-time case needs a row here.
+      if (!proposedSlot && market) {
         await supabase.from('pending_bookings').upsert({
           homeowner_id: homeowner.id,
           roofer_id: homeowner.roofer_id,
@@ -416,6 +429,12 @@ export async function POST(request: NextRequest) {
       type: 'call_needed',
       message: `${fu.name} got a storm alert 2 days ago and hasn't responded — give them a call. ${fu.phone}`,
     })
+    // Release the slot we were holding for them (no reply after 2 days) so it
+    // returns to the available pool. Only touches still-open holds.
+    await supabase.from('pending_bookings')
+      .update({ status: 'expired' })
+      .eq('homeowner_id', fu.homeowner_id)
+      .eq('status', 'awaiting_ho_reply')
   }
 
   return NextResponse.json({ sent: totalSent })

@@ -69,7 +69,7 @@ export async function getNextAvailableSlot(
     .from('pending_bookings')
     .select('proposed_slot')
     .eq('roofer_id', roofer_id)
-    .in('status', ['awaiting_ho_reply', 'awaiting_homeowner', 'confirmed'])
+    .in('status', ['awaiting_ho_reply', 'confirmed'])
     .not('proposed_slot', 'is', null)
 
   const takenSlots = new Set(

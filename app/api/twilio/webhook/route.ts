@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
-import { sendPmConfirmationEmail, sendPmTimeCheckEmail, sendPmCallEmail } from '@/app/_lib/email'
-import { handleHoReply, preClassifyIntent, parseHoTimeReply, HoReplyIntent } from '@/app/_lib/ai-sms'
+import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
+import { preClassifyIntent } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { APP_URL } from '@/app/_lib/url'
 import { NextRequest, NextResponse } from 'next/server'
@@ -131,7 +131,6 @@ export async function POST(request: NextRequest) {
   const profile = homeowner.profiles
   const pmName = profile?.pm_name ?? 'your inspector'
   const pmFirst = pmName.split(' ')[0]
-  const pmPhone = profile?.pm_phone
   const hoFirst = homeowner.name.split(' ')[0]
 
   const { data: pending } = await supabase
@@ -140,97 +139,9 @@ export async function POST(request: NextRequest) {
     .eq('homeowner_id', homeowner.id)
     .maybeSingle()
 
-  // TCPA quiet hours: acknowledge receipt but don't send AI scheduling content
-  if (isQuietHours()) {
-    const ack = `Got your message! ${pmFirst} will follow up with you during business hours.`
-    await sendSms(twilio, fromPhone, ack)
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: ack, direction: 'outbound', status: 'sent', message_type: 'reply' })
+  const quiet = isQuietHours()
 
-    // Act on unambiguous intent silently — no reply to HO to stay TCPA-compliant
-    const quickIntent = preClassifyIntent(messageBody)
-    if (quickIntent?.type === 'confirmed' && pending) {
-      await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
-      await supabase.from('notifications').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, type: 'hot_lead', message: `${homeowner.name} confirmed after hours — follow up to lock in a time. ${homeowner.phone} · ${homeowner.address}` })
-      if (profile?.pm_email) {
-        try {
-          const proposedStr = pending?.proposed_slot
-            ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-            : 'a time TBD'
-          await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${APP_URL}/homeowners/${homeowner.id}`, startISO: pending?.proposed_slot ?? undefined, bookingId: pending?.id })
-        } catch (err) { console.error('PM confirmation email (quiet hours) failed:', err) }
-      }
-    } else if (quickIntent?.type === 'declined') {
-      const pauseUntil = new Date()
-      pauseUntil.setDate(pauseUntil.getDate() + 30)
-      await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
-      if (pending) await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
-    } else {
-      // Try to parse a specific time — add to PM's schedule without texting HO
-      const parsedTime = await parseHoTimeReply(messageBody)
-      if (parsedTime && pending) {
-        const timeStr = parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-        await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: parsedTime.toISOString() }).eq('id', pending.id)
-        await supabase.from('notifications').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, type: 'call_needed', message: `${homeowner.name} requested ${timeStr} after hours — confirm with them. ${homeowner.phone} · ${homeowner.address}` })
-        if (profile?.pm_email) {
-          try {
-            await sendPmTimeCheckEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: timeStr })
-          } catch (err) { console.error('PM time-check email (quiet hours) failed:', err) }
-        }
-      }
-    }
-
-    return new NextResponse('', { status: 200 })
-  }
-
-  // Get last outbound message for AI context + last storm alert time for reply-count limit
-  const [lastOutboundRes, lastAlertRes] = await Promise.all([
-    supabase.from('sms_logs').select('message').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
-    supabase.from('sms_logs').select('sent_at').eq('homeowner_id', homeowner.id).eq('direction', 'outbound').eq('message_type', 'storm_alert').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
-  ])
-
-  const lastHaileyMessage = lastOutboundRes.data?.message ?? `I reached out about storm activity near your home.`
-  const lastAlertTime = lastAlertRes.data?.sent_at
-
-  // Cap at 2 Hailey replies per storm conversation — hand off to PM after that
-  if (lastAlertTime) {
-    const { count: replyCount } = await supabase
-      .from('sms_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('homeowner_id', homeowner.id)
-      .eq('direction', 'outbound')
-      .eq('message_type', 'reply')
-      .gt('sent_at', lastAlertTime)
-
-    if ((replyCount ?? 0) >= 2) {
-      const { data: existingHandoff } = await supabase
-        .from('sms_logs')
-        .select('id')
-        .eq('homeowner_id', homeowner.id)
-        .eq('message_type', 'handoff')
-        .gt('sent_at', lastAlertTime)
-        .maybeSingle()
-      if (existingHandoff) return new NextResponse('', { status: 200 })
-
-      const handoff = `${hoFirst}, sounds like this might be easier over the phone! ${pmFirst} will give you a call to get a time locked in.`
-      await sendSms(twilio, fromPhone, handoff)
-      await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: handoff, direction: 'outbound', status: 'sent', message_type: 'handoff' })
-      await supabase.from('notifications').insert({
-        roofer_id: homeowner.roofer_id,
-        homeowner_id: homeowner.id,
-        type: 'call_needed',
-        message: `${homeowner.name} couldn't schedule over text — give them a call. ${homeowner.phone} · ${homeowner.address}`,
-      })
-      if (profile?.pm_email) {
-        try {
-          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — needs a call to confirm' })
-        } catch (err) { console.error('PM call email failed:', err) }
-      }
-      return new NextResponse('', { status: 200 })
-    }
-  }
-
-  // Inbound rate limit: if a homeowner sends more than 5 messages in the last hour,
-  // skip Claude and send a fallback — prevents API cost runaway from spam/loops.
+  // Inbound rate limit: cap reply volume from spam/loops.
   const hourAgo = new Date(Date.now() - 3600 * 1000).toISOString()
   const { count: inboundCount } = await supabase
     .from('sms_logs')
@@ -245,127 +156,72 @@ export async function POST(request: NextRequest) {
     return new NextResponse('', { status: 200 })
   }
 
-  // Claude with 7s timeout — Twilio webhook times out at 10s
-  let aiResult: { response: string; intent: HoReplyIntent }
-  try {
-    aiResult = await Promise.race([
-      handleHoReply({
-        hoMessage: messageBody,
-        lastHaileyMessage,
-        proposedSlot: pending?.proposed_slot ?? undefined,
-        pmFirstName: pmFirst,
-        hoFirstName: hoFirst,
-      }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 7000)),
-    ])
-  } catch {
-    const fallback = `Got your message! ${pmFirst} will follow up with you shortly.`
-    await sendSms(twilio, fromPhone, fallback)
-    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: fallback, direction: 'outbound', status: 'sent', message_type: 'reply' })
+  // During TCPA quiet hours, suppress scheduling content — send only a brief ack.
+  // DB actions below still apply silently.
+  async function replyHo(fullMsg: string, type: string = 'reply') {
+    const msg = quiet ? `Got your message! ${pmFirst} will follow up with you during business hours.` : fullMsg
+    await sendSms(twilio, fromPhone, msg)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: msg, direction: 'outbound', status: 'sent', message_type: type })
+  }
+
+  const proposedStr = pending?.proposed_slot
+    ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : 'a time'
+
+  // Only an OPEN offer (a slot we are actively holding for this HO) can be acted on.
+  // Already confirmed/declined/handed-off bookings are left untouched, so a stray
+  // "thanks!" can never un-confirm a slot or re-trigger notifications.
+  if (!pending || pending.status !== 'awaiting_ho_reply') {
+    await replyHo(`Got it, ${hoFirst}! ${pmFirst} will follow up with you.`)
     return new NextResponse('', { status: 200 })
   }
 
-  const { response: aiResponse, intent } = aiResult
+  const intent = preClassifyIntent(messageBody)
 
-  // Cap at 320 chars (2 SMS segments) to control costs
-  const safeResponse = aiResponse.length > 320 ? aiResponse.slice(0, 317) + '...' : aiResponse
-
-  await sendSms(twilio, fromPhone, safeResponse)
-  await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: safeResponse, direction: 'outbound', status: 'sent', message_type: 'reply' })
-
-  // Act on intent
-  if (intent.type === 'confirmed') {
-    const proposedStr = pending?.proposed_slot
-      ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : 'a time'
-
+  // CLEAN YES → confirm the slot we already hold for them. That slot was uniquely
+  // reserved at send time, so confirming it can never double-book another homeowner.
+  if (intent?.type === 'confirmed') {
+    await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
     await supabase.from('notifications').insert({
       roofer_id: homeowner.roofer_id,
       homeowner_id: homeowner.id,
       type: 'hot_lead',
       message: `${homeowner.name} confirmed ${proposedStr} at ${homeowner.address}. Call them at ${homeowner.phone}.`,
     })
-
     if (profile?.pm_email) {
       try {
-        const confirmUrl = `${APP_URL}/homeowners/${homeowner.id}`
-        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl, startISO: pending?.proposed_slot ?? undefined, bookingId: pending?.id })
+        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${APP_URL}/homeowners/${homeowner.id}`, startISO: pending.proposed_slot ?? undefined, bookingId: pending.id })
       } catch (err) { console.error('PM confirmation email failed:', err) }
     }
-
-    if (pending) await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
+    await replyHo(`Perfect, you're all set for ${proposedStr}! ${pmFirst} will see you then.`)
+    return new NextResponse('', { status: 200 })
   }
 
-  else if (intent.type === 'declined') {
+  // EXPLICIT NO → decline + pause 30 days. Frees the slot; no call task (they said no).
+  if (intent?.type === 'declined') {
     const pauseUntil = new Date()
     pauseUntil.setDate(pauseUntil.getDate() + 30)
     await supabase.from('homeowners').update({ sms_paused_until: pauseUntil.toISOString() }).eq('id', homeowner.id)
-    if (pending) {
-      await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
-    }
+    await supabase.from('pending_bookings').update({ status: 'declined' }).eq('id', pending.id)
+    await replyHo(`No problem, ${hoFirst} — take care! Reach out anytime if you change your mind.`)
+    return new NextResponse('', { status: 200 })
   }
 
-  else if (intent.type === 'gave_time') {
-    const timeStr = intent.parsedTime.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-
-    await supabase.from('notifications').insert({
-      roofer_id: homeowner.roofer_id,
-      homeowner_id: homeowner.id,
-      type: 'call_needed',
-      message: `${homeowner.name} requested ${timeStr} — call to confirm. ${homeowner.phone} · ${homeowner.address}`,
-    })
-
-    if (profile?.pm_email) {
-      try {
-        await sendPmTimeCheckEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: timeStr })
-      } catch (err) { console.error('PM time-check email failed:', err) }
-    }
-
-    if (pending) {
-      await supabase.from('pending_bookings').update({ status: 'pm_reviewing', proposed_slot: intent.parsedTime.toISOString() }).eq('id', pending.id)
-    }
+  // ANYTHING ELSE (can't make that time / a different time / a vague window / unclear):
+  // we never parse a time from the homeowner. Free the held slot and generate a direct
+  // PM call — this is what removes every double-booking path.
+  await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
+  await supabase.from('notifications').insert({
+    roofer_id: homeowner.roofer_id,
+    homeowner_id: homeowner.id,
+    type: 'call_needed',
+    message: `${homeowner.name} couldn't confirm ${proposedStr} — give them a call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
+  })
+  if (profile?.pm_email) {
+    try {
+      await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'needs a quick call to pick a time' })
+    } catch (err) { console.error('PM call email failed:', err) }
   }
-
-  else if (intent.type === 'gave_availability') {
-    await supabase.from('notifications').insert({
-      roofer_id: homeowner.roofer_id,
-      homeowner_id: homeowner.id,
-      type: 'call_needed',
-      message: `${homeowner.name} is available ${intent.availability} — call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
-    })
-
-    if (profile?.pm_email) {
-      try {
-        await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: intent.availability })
-      } catch (err) { console.error('PM call email failed:', err) }
-    }
-
-    if (pending) await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
-  }
-
-  else if (intent.type === 'unclear') {
-    const alreadyTried = pending?.status === 'awaiting_ho_clarification'
-      || pending?.status === 'awaiting_ho_time'
-
-    if (alreadyTried) {
-      await supabase.from('notifications').insert({
-        roofer_id: homeowner.roofer_id,
-        homeowner_id: homeowner.id,
-        type: 'call_needed',
-        message: `${homeowner.name} couldn't confirm over text — give them a call. ${homeowner.phone} · ${homeowner.address}`,
-      })
-
-      if (profile?.pm_email) {
-        try {
-          await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'flexible — needs a call to confirm' })
-        } catch (err) { console.error('PM call email failed:', err) }
-      }
-
-      if (pending) await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
-    } else if (pending) {
-      await supabase.from('pending_bookings').update({ status: 'awaiting_ho_clarification' }).eq('id', pending.id)
-    }
-  }
-
+  await replyHo(`Thanks ${hoFirst}! ${pmFirst} will give you a quick call to find a time that works.`)
   return new NextResponse('', { status: 200 })
 }
