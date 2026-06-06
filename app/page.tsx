@@ -180,10 +180,10 @@ export default function LandingPage() {
             {/* Header bar */}
             <div className="flex items-center gap-3 pb-3 border-b border-zinc-800 mb-3">
               <div className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300">
-                SC
+                SR
               </div>
               <div>
-                <p className="text-white text-sm font-medium">Sarah C.</p>
+                <p className="text-white text-sm font-medium">Stonebridge Roofing</p>
                 <p className="text-zinc-500 text-xs">Text Message</p>
               </div>
               <div className="ml-auto flex items-center gap-1">
@@ -198,23 +198,18 @@ export default function LandingPage() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                  <p className="text-zinc-200 leading-snug">Hey Sarah, Marcus here from Titan Roofing. Saw that hail came through your area yesterday — wanted to check in and see if your roof came out okay. We're doing free inspections for a few homeowners this week if you want us to swing by.</p>
+                  <p className="text-zinc-200 leading-snug">Hey Sarah, Hailey from Stonebridge Roofing here. We caught some weather near your home and want to make sure your roof came through okay. Mike's first available is Thursday at 9:00 AM — does that work for you?</p>
                 </div>
               </div>
               <p className="text-zinc-600 text-xs text-left pl-1">10:43 AM</p>
               <div className="flex justify-end">
                 <div className="bg-sky-500 rounded-2xl rounded-tr-sm px-3.5 py-2.5 max-w-[80%]">
-                  <p className="text-white leading-snug">Oh wow yeah that'd be great, I did notice some stuff on the porch</p>
+                  <p className="text-white leading-snug">Oh perfect, yeah that works — I did notice some stuff on the porch</p>
                 </div>
               </div>
               <div className="flex justify-start">
                 <div className="bg-zinc-800 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                  <p className="text-zinc-200 leading-snug">Perfect. I'll put you down for Thursday at 9am — does that work?</p>
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <div className="bg-sky-500 rounded-2xl rounded-tr-sm px-3.5 py-2.5">
-                  <p className="text-white leading-snug">Works for me 👍</p>
+                  <p className="text-zinc-200 leading-snug">Awesome, you're all set for Thursday at 9:00 AM 👍 Mike will see you then.</p>
                 </div>
               </div>
             </div>
