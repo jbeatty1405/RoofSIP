@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
           const proposedStr = pending?.proposed_slot
             ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
             : 'a time TBD'
-          await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${process.env.NEXTAUTH_URL}/homeowners/${homeowner.id}`, startISO: pending?.proposed_slot ?? undefined })
+          await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${process.env.NEXTAUTH_URL}/homeowners/${homeowner.id}`, startISO: pending?.proposed_slot ?? undefined, bookingId: pending?.id })
         } catch (err) { console.error('PM confirmation email (quiet hours) failed:', err) }
       }
     } else if (quickIntent?.type === 'declined') {
@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
     if (profile?.pm_email) {
       try {
         const confirmUrl = `${process.env.NEXTAUTH_URL}/homeowners/${homeowner.id}`
-        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl, startISO: pending?.proposed_slot ?? undefined })
+        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl, startISO: pending?.proposed_slot ?? undefined, bookingId: pending?.id })
       } catch (err) { console.error('PM confirmation email failed:', err) }
     }
 
