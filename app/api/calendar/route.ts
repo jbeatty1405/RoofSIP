@@ -38,10 +38,12 @@ export async function GET(req: NextRequest) {
   })
   if (!ics) return new Response('Invalid appointment time', { status: 404 })
 
+  // inline (not attachment) so iOS Safari opens the "Add to Calendar" sheet
+  // directly instead of saving the file to Files.
   return new Response(ics, {
     headers: {
       'Content-Type': 'text/calendar; charset=utf-8',
-      'Content-Disposition': 'attachment; filename="roof-inspection.ics"',
+      'Content-Disposition': 'inline; filename="roof-inspection.ics"',
       'Cache-Control': 'no-store',
     },
   })
