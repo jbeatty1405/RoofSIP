@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer'
 import { buildInspectionIcs } from './ics'
+import { APP_URL } from './url'
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -251,11 +252,10 @@ export async function sendPmConfirmationEmail({
     ? buildInspectionIcs({ startISO, homeownerName, homeownerAddress, homeownerPhone })
     : null
 
-  // One-tap "Add to Calendar" link (served as a downloadable .ics by /api/calendar).
-  const baseUrl = (process.env.NEXTAUTH_URL || 'https://roofsip.vercel.app').replace(/\/$/, '')
-  const calendarUrl = ics && bookingId ? `${baseUrl}/api/calendar?booking=${bookingId}` : null
+  // One-tap "Add to Calendar" link (served as an inline .ics by /api/calendar).
+  const calendarUrl = ics && bookingId ? `${APP_URL}/api/calendar?booking=${bookingId}` : null
 
-  await transporter.sendMail({
+  return await transporter.sendMail({
     from: `RoofSIP <${process.env.GMAIL_USER}>`,
     to,
     subject: `New inspection request — ${homeownerName}`,
