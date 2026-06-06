@@ -8,6 +8,57 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+// --- iCalendar (.ics) helpers: lets a roofer tap "Add to Calendar" on iPhone ---
+function icsEscape(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+}
+
+function toIcsUtc(d: Date): string {
+  // 2026-06-12T16:00:00.000Z -> 20260612T160000Z
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+}
+
+// Builds a PUBLISH-method VEVENT (a plain "add to my calendar" item, not an RSVP invite).
+// Returns null if startISO isn't a valid date.
+function buildInspectionIcs({
+  startISO,
+  homeownerName,
+  homeownerAddress,
+  homeownerPhone,
+}: {
+  startISO: string
+  homeownerName: string
+  homeownerAddress: string
+  homeownerPhone: string
+}): string | null {
+  const start = new Date(startISO)
+  if (isNaN(start.getTime())) return null
+  const end = new Date(start.getTime() + 60 * 60 * 1000) // 1-hour slot (matches scheduler)
+  const dtStart = toIcsUtc(start)
+  const uid = `inspection-${dtStart}-${encodeURIComponent(homeownerName)}@roofsip`
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//RoofSIP//Inspection//EN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${dtStart}`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${toIcsUtc(end)}`,
+    `SUMMARY:${icsEscape(`Roof inspection — ${homeownerName}`)}`,
+    `LOCATION:${icsEscape(homeownerAddress)}`,
+    `DESCRIPTION:${icsEscape(`Free roof inspection for ${homeownerName}. Phone: ${homeownerPhone}. Booked via RoofSIP.`)}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT1H',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:Roof inspection reminder',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n')
+}
+
 export async function sendWelcomeEmail({
   to,
   pmName,
@@ -233,6 +284,7 @@ export async function sendPmConfirmationEmail({
   homeownerAddress,
   proposedTime,
   confirmUrl,
+  startISO,
 }: {
   to: string
   pmName: string
@@ -241,7 +293,12 @@ export async function sendPmConfirmationEmail({
   homeownerAddress: string
   proposedTime: string
   confirmUrl: string
+  startISO?: string
 }) {
+  const ics = startISO
+    ? buildInspectionIcs({ startISO, homeownerName, homeownerAddress, homeownerPhone })
+    : null
+
   await transporter.sendMail({
     from: `RoofSIP <${process.env.GMAIL_USER}>`,
     to,
@@ -262,12 +319,22 @@ export async function sendPmConfirmationEmail({
         <a href="${confirmUrl}" style="display:inline-block;background:#0ea5e9;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600">
           Confirm this time
         </a>
-
+${ics ? `
+        <p style="margin:20px 0 0;font-size:13px;color:#555">
+          📅 <strong>Add to your calendar:</strong> open the attached <strong>roof-inspection.ics</strong> file to drop this appointment straight into Apple Calendar, Google Calendar, or Outlook.
+        </p>` : ''}
         <p style="margin:20px 0 0;font-size:12px;color:#999">
           If this time doesn't work, just reply to this email with your next available time and we'll update the homeowner automatically.
         </p>
       </div>
     `,
+    attachments: ics
+      ? [{
+          filename: 'roof-inspection.ics',
+          content: ics,
+          contentType: 'text/calendar; charset=utf-8; method=PUBLISH',
+        }]
+      : undefined,
   })
 }
 
