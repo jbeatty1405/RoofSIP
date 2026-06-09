@@ -1,5 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import HaileyBanner from './HaileyBanner'
+import AppStoreBadge from '@/app/_components/AppStoreBadge'
 import Link from 'next/link'
 
 export default async function DashboardHome() {
@@ -59,6 +60,15 @@ export default async function DashboardHome() {
       </div>
 
       <HaileyBanner recentActivity={lastAlertLabel} />
+
+      {/* Get the iOS app */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+        <div>
+          <p className="text-sm font-semibold text-white">Get RoofSIP on your phone</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Manage storms, alerts, and bookings from the iOS app.</p>
+        </div>
+        <AppStoreBadge className="shrink-0 self-start sm:self-auto" />
+      </div>
 
       {/* Confirmed Appointments */}
       <div className="mb-6">
