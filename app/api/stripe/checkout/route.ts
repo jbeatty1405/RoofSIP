@@ -30,13 +30,28 @@ export async function POST(request: NextRequest) {
     .single()
 
   let customerId = profile?.stripe_customer_id
-  if (!customerId) {
+  if (customerId) {
+    // Block duplicate subscriptions. Without this, an already-subscribed user who
+    // re-hits checkout (stale /subscribe tab, back button, double-click) creates a
+    // SECOND $20/mo sub on the same customer; the webhook then overwrites
+    // stripe_subscription_id, orphaning the original so it keeps billing forever
+    // and cancel only stops the newest. Stripe is the source of truth here — our
+    // subscription_status can lag the webhook.
+    const existing = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 })
+    const liveStatuses = ['active', 'trialing', 'past_due', 'unpaid']
+    if (existing.data.some(s => liveStatuses.includes(s.status))) {
+      return NextResponse.json({ error: 'You already have an active subscription.' }, { status: 400 })
+    }
+  } else {
     const customer = await stripe.customers.create({
       email: user.email!,
       metadata: { userId: user.id },
     })
     customerId = customer.id
-    await supabase
+    // Use the service client: the cookie-auth client's column-scoped grant on
+    // profiles excludes stripe_customer_id, so this write would silently 42501
+    // and leave an orphan Stripe customer on every first checkout.
+    await serviceClient
       .from('profiles')
       .update({ stripe_customer_id: customerId })
       .eq('id', user.id)
