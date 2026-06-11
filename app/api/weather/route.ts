@@ -11,6 +11,11 @@ function resolveTemplate(body: string, vars: Record<string, string>): string {
   return body.replace(/{{(\w+)}}/g, (_, key) => vars[key] ?? '')
 }
 
+// Last 10 digits, for comparing a homeowner phone against contractor phones.
+function normalizePhone(raw: string | null | undefined): string {
+  return (raw ?? '').replace(/\D/g, '').slice(-10)
+}
+
 function extractHailInches(text: string): number {
   const m = text.match(/hail[^.]*?(\d+(?:\.\d+)?)\s*in(?:ch(?:es)?)?/i)
   return m ? parseFloat(m[1]) : 0
@@ -66,6 +71,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Master switch (defense in depth alongside the cron route). Sends stay OFF
+  // until a deliberate go-live: set STORM_CRON_ENABLED=true once real homeowners
+  // exist and the recipient list has been reviewed.
+  if (process.env.STORM_CRON_ENABLED !== 'true') {
+    return NextResponse.json({ paused: true, reason: 'STORM_CRON_ENABLED not set' })
+  }
+
   if (isQuietHours()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
 
   if (await isMonthlySmsCapped()) {
@@ -80,12 +92,19 @@ export async function POST(request: NextRequest) {
   if (!cronAllowed) return NextResponse.json({ skipped: true, reason: 'cron_rate_limited' })
   const twilio = getTwilioClient()
 
+  // PM-phone guard: never text a number that belongs to a contractor (a PM who
+  // entered their own number as a homeowner while testing). Defense in depth on
+  // top of is_test filtering below.
+  const { data: pmRows } = await supabase.from('profiles').select('pm_phone')
+  const pmPhoneSet = new Set((pmRows ?? []).map((p: any) => normalizePhone(p.pm_phone)).filter(Boolean))
+
   // Deferred intro texts: homeowners added during quiet hours, not yet texted
   const { data: uncontacted } = await supabase
     .from('homeowners')
     .select('*, profiles(pm_name, company_name, subscription_status)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', false)
+    .eq('is_test', false)
     .limit(10000)
 
   if (uncontacted?.length) {
@@ -103,6 +122,7 @@ export async function POST(request: NextRequest) {
       if (alreadySentIds.has(h.id)) continue
       const profile = h.profiles
       if (!profile || profile.subscription_status !== 'active') continue
+      if (pmPhoneSet.has(normalizePhone(h.phone))) continue // never text a contractor's own number
       const msg = buildIntroSms(profile.pm_name ?? 'Your contractor', h.name, profile.company_name ?? undefined)
       try {
         const sent = await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: h.phone })
@@ -198,6 +218,7 @@ export async function POST(request: NextRequest) {
     .from('homeowners')
     .select('id, name, phone, address, zip_code, roofer_id, profiles(subscription_status)')
     .eq('monitor_only', true)
+    .eq('is_test', false)
     .limit(10000)
 
   const { data: activeHomeowners } = await supabase
@@ -206,6 +227,7 @@ export async function POST(request: NextRequest) {
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
     .eq('monitor_only', false)
+    .eq('is_test', false)
     .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
     .limit(10000)
 
@@ -285,6 +307,7 @@ export async function POST(request: NextRequest) {
 
     const profile = homeowner.profiles
     if (!profile || profile.subscription_status !== 'active') continue
+    if (pmPhoneSet.has(normalizePhone(homeowner.phone))) continue // never text a contractor's own number
     if (profile.sms_count_this_month >= profile.sms_cap) continue
 
     const alerts = alertsByZip[homeowner.zip_code] ?? []
