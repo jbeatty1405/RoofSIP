@@ -24,14 +24,24 @@ export async function getMarketById(
   return (data as Market) ?? null
 }
 
+// Homeowners are in Arizona (MST year-round, UTC-7, no DST), but the server runs
+// in UTC. All slot math and display must be done in Phoenix time, or a slot meant
+// for 9am gets stored/shown as 2am. See PHOENIX_OFFSET_MS below for the math side.
+const PHOENIX_TZ = 'America/Phoenix'
+const PHOENIX_OFFSET_MS = 7 * 60 * 60 * 1000
+// Shift an instant into a "Phoenix frame" where getUTC* fields read as Phoenix
+// wall-clock; fromPhx converts a computed Phoenix-frame date back to a real UTC instant.
+const toPhx = (d: Date) => new Date(d.getTime() - PHOENIX_OFFSET_MS)
+const fromPhx = (d: Date) => new Date(d.getTime() + PHOENIX_OFFSET_MS)
+
 export function formatSlot(slot: Date): string {
   const now = new Date()
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const timeStr = slot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  if (slot.toDateString() === now.toDateString()) return `today at ${timeStr}`
-  if (slot.toDateString() === tomorrow.toDateString()) return `tomorrow at ${timeStr}`
-  const day = slot.toLocaleDateString('en-US', { weekday: 'long' })
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  const dayKey = (d: Date) => d.toLocaleDateString('en-US', { timeZone: PHOENIX_TZ })
+  const timeStr = slot.toLocaleTimeString('en-US', { timeZone: PHOENIX_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
+  if (dayKey(slot) === dayKey(now)) return `today at ${timeStr}`
+  if (dayKey(slot) === dayKey(tomorrow)) return `tomorrow at ${timeStr}`
+  const day = slot.toLocaleDateString('en-US', { timeZone: PHOENIX_TZ, weekday: 'long' })
   return `${day} at ${timeStr}`
 }
 
@@ -51,8 +61,11 @@ export async function getNextAvailableSlot(
   // Last slot must end by working_hours_end, so last start = endHour - 1
   const lastSlotHour = endHour - 1
 
-  const now = new Date()
-  const currentHour = now.getHours()
+  // Work entirely in the Phoenix frame so getUTC*/setUTC* below read and write
+  // Phoenix wall-clock; the returned slot is converted back to a real instant.
+  const phxNow = toPhx(new Date())
+  const currentHour = phxNow.getUTCHours()
+  const todayStr = phxNow.toISOString().slice(0, 10)
   // Storm before 3pm → try same day; at/after 3pm → start from tomorrow
   const SAME_DAY_CUTOFF = 15
 
@@ -74,26 +87,26 @@ export async function getNextAvailableSlot(
 
   const takenSlots = new Set(
     (existingBookings ?? []).map((b: any) => {
-      const d = new Date(b.proposed_slot)
-      // Normalize to YYYY-MM-DD-HH key for comparison
-      return `${d.toISOString().slice(0, 10)}-${d.getHours()}`
+      const d = toPhx(new Date(b.proposed_slot))
+      // Normalize to Phoenix YYYY-MM-DD-HH key for comparison
+      return `${d.toISOString().slice(0, 10)}-${d.getUTCHours()}`
     })
   )
 
-  const d = new Date(now)
+  const d = new Date(phxNow)
   // Only try same day if storm is before 3pm and there are still slots left today
   if (currentHour >= SAME_DAY_CUTOFF || currentHour >= lastSlotHour) {
-    d.setDate(d.getDate() + 1)
+    d.setUTCDate(d.getUTCDate() + 1)
   }
-  d.setHours(0, 0, 0, 0)
+  d.setUTCHours(0, 0, 0, 0)
 
   for (let i = 0; i < 30; i++) {
-    const dbDay = jsToDbDay(d.getDay())
+    const dbDay = jsToDbDay(d.getUTCDay())
     const dateStr = d.toISOString().slice(0, 10)
 
     if (market.working_days.includes(dbDay) && !blocked.has(dateStr)) {
       // Try each hour slot from start to last
-      const firstHour = d.toDateString() === now.toDateString()
+      const firstHour = dateStr === todayStr
         ? Math.max(startHour, currentHour + 1) // same day: start after current hour
         : startHour
 
@@ -101,21 +114,21 @@ export async function getNextAvailableSlot(
         const slotKey = `${dateStr}-${h}`
         if (!takenSlots.has(slotKey)) {
           const slot = new Date(d)
-          slot.setHours(h, 0, 0, 0)
-          return slot
+          slot.setUTCHours(h, 0, 0, 0)
+          return fromPhx(slot)
         }
       }
     }
 
-    d.setDate(d.getDate() + 1)
+    d.setUTCDate(d.getUTCDate() + 1)
   }
 
-  // Fallback: next weekday at start hour
-  const fallback = new Date()
-  fallback.setDate(fallback.getDate() + 1)
-  while ([0, 6].includes(fallback.getDay())) {
-    fallback.setDate(fallback.getDate() + 1)
+  // Fallback: next weekday at start hour (Phoenix)
+  const fallback = toPhx(new Date())
+  fallback.setUTCDate(fallback.getUTCDate() + 1)
+  while ([0, 6].includes(fallback.getUTCDay())) {
+    fallback.setUTCDate(fallback.getUTCDate() + 1)
   }
-  fallback.setHours(startHour, 0, 0, 0)
-  return fallback
+  fallback.setUTCHours(startHour, 0, 0, 0)
+  return fromPhx(fallback)
 }

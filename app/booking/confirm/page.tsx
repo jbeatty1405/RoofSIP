@@ -31,7 +31,7 @@ export default async function ConfirmPage({
   const homeowner = Array.isArray(pending.homeowners) ? pending.homeowners[0] : pending.homeowners
   const proposed = new Date(pending.proposed_slot)
   const dateStr = proposed.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 
   return (

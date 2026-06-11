@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
   }
 
   const proposedStr = pending?.proposed_slot
-    ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : 'a time'
 
   // Only an OPEN offer (a slot we are actively holding for this HO) can be acted on.

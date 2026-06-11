@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   const confirmedTime = new Date(pending.proposed_slot)
 
   const dateStr = confirmedTime.toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 
   let googleEventId: string | undefined
