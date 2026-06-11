@@ -412,7 +412,8 @@ export async function POST(request: NextRequest) {
 
       stormAlertedThisRun.add(homeowner.id)
       sentLast48hPhones.add(homeowner.phone)
-      await supabase.rpc('increment_sms_count', { p_id: profile.id })
+      const { error: incErr } = await supabase.rpc('increment_sms_count', { p_id: profile.id })
+      if (incErr) console.error('increment_sms_count failed — per-roofer SMS cap will NOT enforce:', incErr)
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)
