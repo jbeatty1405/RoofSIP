@@ -32,6 +32,10 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
       .filter((f: any) => {
         const event = (f.properties?.event ?? '').toLowerCase()
         const severity = (f.properties?.severity ?? '').toLowerCase()
+        // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
+        // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
+        const nonRoof = ['chill', 'heat', 'freeze', 'frost', 'cold']
+        if (nonRoof.some(k => event.includes(k))) return false
         return (
           event.includes('thunder') ||
           event.includes('hail') ||
