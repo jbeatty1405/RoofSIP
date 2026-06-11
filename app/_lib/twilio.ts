@@ -104,5 +104,5 @@ export function buildIntroSms(pmName: string, homeownerName: string, companyName
   const pmFirst = pmName.split(' ')[0]
   const cleaned = companyName ? cleanCompanyName(companyName) : ''
   const from = cleaned ? `Hailey from ${cleaned}` : `Hailey from ${pmFirst}'s roofing team`
-  return `Hey ${firstName}, ${from}! ${pmFirst} set you up for a free roof inspection if anything hits near your home. Reply YES or STOP to opt out.`
+  return `Hey ${firstName}, ${from}! ${pmFirst} set you up for a free roof inspection if a storm comes through your area. Reply YES or STOP to opt out.`
 }

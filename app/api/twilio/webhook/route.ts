@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
       reply = `Got it! We won't reach out again. Take care.`
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
-      reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. ${pmFirst} set you up for a free roof inspection if anything hits near your home. Reply YES or STOP to opt out.`
+      reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. ${pmFirst} set you up for a free roof inspection if a storm comes through your area. Reply YES or STOP to opt out.`
     }
 
     await sendSms(twilio, fromPhone, reply)
