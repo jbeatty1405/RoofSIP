@@ -1,0 +1,24 @@
+name: Storm weather cron
+
+# Vercel Hobby only triggers native crons ~once/day, which is far too slow for a
+# storm-response product. GitHub Actions is the authoritative hourly scheduler:
+# it hits the CRON_SECRET-gated /api/cron/weather endpoint, which checks NOAA
+# alerts and sends storm SMS to homeowners. workflow_dispatch allows manual runs.
+on:
+  schedule:
+    - cron: '0 * * * *' # top of every hour, UTC (GitHub may delay a few minutes)
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit storm cron endpoint
+        run: |
+          code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://roofsip.vercel.app/api/cron/weather)
+          echo "HTTP $code"
+          cat /tmp/out.txt
+          echo
+          test "$code" = "200"
