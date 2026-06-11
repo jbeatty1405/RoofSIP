@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
 
     let reply: string
     if (isOptOut) {
-      await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
+      await supabase.from('homeowners').update({ tcpa_consent: false }).eq('phone', fromPhone) // STOP opts out every record with this number, across all roofers (TCPA)
       reply = `Got it! We won't reach out again. Take care.`
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
 
   // STOP always wins — TCPA compliance, process regardless of quiet hours
   if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
-    await supabase.from('homeowners').update({ tcpa_consent: false }).eq('id', homeowner.id)
+    await supabase.from('homeowners').update({ tcpa_consent: false }).eq('phone', fromPhone) // STOP opts out every record with this number, across all roofers (TCPA)
     return new NextResponse('', { status: 200 })
   }
 

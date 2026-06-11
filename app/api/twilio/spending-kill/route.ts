@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 import nodemailer from 'nodemailer'
+import { createServiceClient } from '@/app/_lib/supabase/server'
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -20,13 +21,26 @@ export async function POST(request: NextRequest) {
   const isValid = validateRequest(process.env.TWILIO_AUTH_TOKEN!, twilioSignature, url, payload)
   if (!isValid) return new NextResponse('Forbidden', { status: 403 })
 
+  const value = payload.TriggerValue ?? '50'
+
+  // Actually halt sends: set the persistent kill flag that isMonthlySmsCapped()
+  // honors. This is the real stop — the email below is just the notification.
   try {
-    const value = payload.TriggerValue ?? '50'
+    const supabase = await createServiceClient()
+    await supabase.from('app_flags').upsert(
+      { flag: 'sms_send_kill', enabled: true, note: `Twilio spend hit $${value}`, updated_at: new Date().toISOString() },
+      { onConflict: 'flag' },
+    )
+  } catch (err) {
+    console.error('[spending-kill] failed to set kill flag:', err)
+  }
+
+  try {
     await transporter.sendMail({
       from: `RoofSIP <${process.env.GMAIL_USER}>`,
       to: 'jbeatty1405@yahoo.com',
-      subject: `🚨 RoofSIP Twilio spend hit $${value} — in-app SMS already blocked`,
-      text: `Your Twilio account has hit $${value} this month.\n\nRoofSIP's in-app SMS cap (4,000 msgs/month) should have already blocked further sends. If you're still seeing charges, log in immediately:\nhttps://console.twilio.com\n\nTo raise the limit: update MONTHLY_SMS_CAP in app/_lib/twilio.ts and redeploy.`,
+      subject: `🚨 RoofSIP Twilio spend hit $${value} — automated SMS HALTED`,
+      text: `Your Twilio account has hit $${value} this month.\n\nRoofSIP automated SMS is now HALTED: the sms_send_kill flag is set, so isMonthlySmsCapped() blocks all cron/intro sends until you clear it.\n\nTo resume sending once resolved, set app_flags.sms_send_kill enabled=false (Supabase) and confirm spend at https://console.twilio.com`,
     })
   } catch (err) {
     console.error('[spending-kill] email failed:', err)

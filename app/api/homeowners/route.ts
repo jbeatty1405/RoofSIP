@@ -70,12 +70,18 @@ export async function POST(request: NextRequest) {
   const service = await createServiceClient()
   const { data: profile } = await service
     .from('profiles')
-    .select('pm_name, company_name')
+    .select('pm_name, company_name, subscription_status')
     .eq('id', user.id)
     .single()
 
   if (monitorOnly || !tcpaConsent || isQuietHours()) {
     return NextResponse.json({ id: homeowner.id, deferred: (!monitorOnly && tcpaConsent && isQuietHours()) })
+  }
+
+  // Only paying (active) accounts send automated SMS. The homeowner is still
+  // saved; if the subscription activates later, the cron sends the deferred intro.
+  if (profile?.subscription_status !== 'active') {
+    return NextResponse.json({ id: homeowner.id, smsSkipped: 'inactive_subscription' })
   }
 
   const pmName = profile?.pm_name ?? 'Your contractor'

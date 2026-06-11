@@ -16,6 +16,23 @@ function normalizePhone(raw: string | null | undefined): string {
   return (raw ?? '').replace(/\D/g, '').slice(-10)
 }
 
+// Read rows for a large set of ids without hitting PostgREST's 1000-row cap or
+// blowing the URL length on a huge .in() list: chunk the ids, surface errors so
+// callers can fail closed (skip sending) instead of silently getting a truncated
+// or empty dedup set that causes re-sends.
+async function fetchInChunks(
+  ids: string[],
+  run: (chunk: string[]) => PromiseLike<{ data: any[] | null; error: any }>,
+): Promise<{ rows: any[]; ok: boolean }> {
+  const rows: any[] = []
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data, error } = await run(ids.slice(i, i + 500))
+    if (error) { console.error('[weather] chunked read failed:', error); return { rows, ok: false } }
+    if (data) rows.push(...data)
+  }
+  return { rows, ok: true }
+}
+
 function extractHailInches(text: string): number {
   const m = text.match(/hail[^.]*?(\d+(?:\.\d+)?)\s*in(?:ch(?:es)?)?/i)
   return m ? parseFloat(m[1]) : 0
@@ -108,13 +125,14 @@ export async function POST(request: NextRequest) {
     .limit(10000)
 
   if (uncontacted?.length) {
-    const { data: existingLogs } = await supabase
-      .from('sms_logs')
-      .select('homeowner_id')
-      .in('homeowner_id', uncontacted.map((h: any) => h.id))
-      .eq('direction', 'outbound')
-
-    const alreadySentIds = new Set(existingLogs?.map((l: any) => l.homeowner_id))
+    const dedup = await fetchInChunks(
+      uncontacted.map((h: any) => h.id),
+      (chunk) => supabase.from('sms_logs').select('homeowner_id').in('homeowner_id', chunk).eq('direction', 'outbound'),
+    )
+    // Fail closed: if we can't read who's already been contacted, skip the run
+    // rather than risk re-texting everyone an intro.
+    if (!dedup.ok) return NextResponse.json({ skipped: true, reason: 'intro_dedup_read_failed' })
+    const alreadySentIds = new Set(dedup.rows.map((l: any) => l.homeowner_id))
     let introSent = 0
 
     for (const h of uncontacted as any[]) {
@@ -272,25 +290,33 @@ export async function POST(request: NextRequest) {
 
   // Alert dedup: skip homeowners who already received this specific NOAA alert
   const activeIds = (activeHomeowners ?? []).map((h: any) => h.id)
-  const { data: sentAlertLogs } = await supabase
-    .from('sms_logs')
-    .select('homeowner_id, noaa_alert_id')
-    .in('homeowner_id', activeIds)
-    .not('noaa_alert_id', 'is', null)
-    .eq('direction', 'outbound')
-  const sentAlertSet = new Set((sentAlertLogs ?? []).map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
+  const sentAlert = await fetchInChunks(
+    activeIds,
+    (chunk) => supabase.from('sms_logs').select('homeowner_id, noaa_alert_id').in('homeowner_id', chunk).not('noaa_alert_id', 'is', null).eq('direction', 'outbound'),
+  )
+  // Fail closed: a truncated/empty dedup set would re-send storm alerts.
+  if (!sentAlert.ok) return NextResponse.json({ skipped: true, reason: 'storm_dedup_read_failed' })
+  const sentAlertSet = new Set(sentAlert.rows.map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
   // 48h cooldown — prevents multiple hits from the same lingering storm system.
   // Severe hail (≥ 0.25") bypasses this so a genuinely damaging new storm still fires.
   const cutoff48h = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
-  const { data: recentAlertLogs } = await supabase
-    .from('sms_logs')
-    .select('homeowner_id')
-    .in('homeowner_id', activeIds)
-    .eq('direction', 'outbound')
-    .eq('message_type', 'storm_alert')
-    .gte('sent_at', cutoff48h)
-  const sentLast48hSet = new Set(recentAlertLogs?.map((l: any) => l.homeowner_id))
+  const recentAlert = await fetchInChunks(
+    activeIds,
+    (chunk) => supabase.from('sms_logs').select('homeowner_id').in('homeowner_id', chunk).eq('direction', 'outbound').eq('message_type', 'storm_alert').gte('sent_at', cutoff48h),
+  )
+  if (!recentAlert.ok) return NextResponse.json({ skipped: true, reason: 'storm_dedup_read_failed' })
+  const sentLast48hSet = new Set(recentAlert.rows.map((l: any) => l.homeowner_id))
+
+  // Don't re-pitch (and clobber the booking of) anyone who already has a future
+  // confirmed inspection — the reserve upsert below keys on homeowner_id and would
+  // otherwise overwrite their 'confirmed' row back to awaiting_ho_reply.
+  const confirmedBookings = await fetchInChunks(
+    activeIds,
+    (chunk) => supabase.from('pending_bookings').select('homeowner_id').in('homeowner_id', chunk).eq('status', 'confirmed').gt('proposed_slot', now),
+  )
+  if (!confirmedBookings.ok) return NextResponse.json({ skipped: true, reason: 'confirmed_booking_read_failed' })
+  const confirmedSet = new Set(confirmedBookings.rows.map((b: any) => b.homeowner_id))
 
   // Cross-contractor dedup: same phone number across multiple roofer accounts
   const hoById = new Map((activeHomeowners as any[]).map((h: any) => [h.id, h]))
@@ -308,6 +334,7 @@ export async function POST(request: NextRequest) {
     const profile = homeowner.profiles
     if (!profile || profile.subscription_status !== 'active') continue
     if (pmPhoneSet.has(normalizePhone(homeowner.phone))) continue // never text a contractor's own number
+    if (confirmedSet.has(homeowner.id)) continue // already has a confirmed inspection — don't re-pitch or clobber it
     if (profile.sms_count_this_month >= profile.sms_cap) continue
 
     const alerts = alertsByZip[homeowner.zip_code] ?? []

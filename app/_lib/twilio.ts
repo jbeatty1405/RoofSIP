@@ -15,6 +15,13 @@ const MONTHLY_SMS_CAP = 4000
 export async function isMonthlySmsCapped(): Promise<boolean> {
   try {
     const supabase = await createServiceClient()
+    // Hard kill switch, set by /api/twilio/spending-kill on a Twilio spend alert.
+    const { data: kill } = await supabase
+      .from('app_flags')
+      .select('enabled')
+      .eq('flag', 'sms_send_kill')
+      .maybeSingle()
+    if (kill?.enabled) return true
     const start = new Date()
     start.setDate(1)
     start.setHours(0, 0, 0, 0)

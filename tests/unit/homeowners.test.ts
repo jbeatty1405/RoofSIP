@@ -47,8 +47,9 @@ beforeEach(() => {
     data: { user: { id: 'user_1', email_confirmed_at: new Date().toISOString() } },
   })
 
-  // Chain: from().insert().select().single()
-  mockSingle.mockResolvedValue({ data: { id: 'hw_new', name: 'Jane Doe' }, error: null })
+  // Chain: from().insert().select().single() — also serves the profile fetch,
+  // so include subscription_status so the active-sub gate passes by default.
+  mockSingle.mockResolvedValue({ data: { id: 'hw_new', name: 'Jane Doe', subscription_status: 'active' }, error: null })
   mockSelect.mockReturnValue({ single: mockSingle })
   mockInsert.mockReturnValue({ select: mockSelect })
   mockEq.mockReturnValue({ single: mockSingle })
@@ -145,6 +146,23 @@ describe('POST /api/homeowners', () => {
       zipCode: '85001',
     }))
     expect(res.status).toBe(429)
+  })
+
+  it('skips the intro SMS when the subscription is not active', async () => {
+    const { homeownerCreatesLast24h } = await import('@/app/_lib/rate-limit')
+    vi.mocked(homeownerCreatesLast24h).mockResolvedValue(0) // reset in case a prior test set the limit
+    mockSingle.mockResolvedValue({ data: { id: 'hw_new', subscription_status: 'inactive' }, error: null })
+    const res = await POST(makeRequest({
+      name: 'Jane Doe',
+      phone: '6025551234',
+      address: '123 Main St',
+      zipCode: '85001',
+      tcpaConsent: true,
+    }))
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.smsSkipped).toBe('inactive_subscription')
+    expect(mockTwilioCreate).not.toHaveBeenCalled()
   })
 
   it('returns deferred=true during quiet hours (no SMS sent)', async () => {
