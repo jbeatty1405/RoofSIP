@@ -34,7 +34,12 @@ export async function proxy(request: NextRequest) {
     pathname === '/' ||
     pathname.startsWith('/consent') ||
     pathname.startsWith('/privacy') ||
-    pathname.startsWith('/terms')
+    pathname.startsWith('/terms') ||
+    // metadata image routes must stay public so link previews unfurl
+    pathname.startsWith('/opengraph-image') ||
+    pathname.startsWith('/twitter-image') ||
+    pathname.startsWith('/icon') ||
+    pathname.startsWith('/apple-icon')
 
   if (!user && !isAuthRoute && !isApiRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
