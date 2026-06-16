@@ -24,15 +24,15 @@ export default async function DashboardHome() {
     supabase.from('pending_bookings').select('id, proposed_slot, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('status', 'confirmed').gt('proposed_slot', new Date().toISOString()).order('proposed_slot', { ascending: true }).limit(10),
     supabase.from('notifications').select('id, message, type, created_at, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('read', false).neq('type', 'hot_lead').order('created_at', { ascending: false }).limit(5),
     supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).eq('read', false).neq('type', 'hot_lead'),
-    supabase.from('sms_logs').select('created_at').eq('roofer_id', user!.id).eq('direction', 'outbound').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('sms_logs').select('sent_at').eq('roofer_id', user!.id).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   let lastAlertLabel = 'No alerts sent yet'
-  if (lastSms?.created_at) {
-    const days = Math.floor((Date.now() - new Date(lastSms.created_at).getTime()) / 86400000)
+  if (lastSms?.sent_at) {
+    const days = Math.floor((Date.now() - new Date(lastSms.sent_at).getTime()) / 86400000)
     lastAlertLabel = days === 0 ? 'Last alert today' : days === 1 ? 'Last alert yesterday' : `Last alert ${days}d ago`
   }
 
