@@ -5,6 +5,7 @@ import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
+import { bumpSmsCount, PER_ACCOUNT_HARD_CEILING } from '@/app/_lib/sms-meter'
 import { NextRequest, NextResponse } from 'next/server'
 
 function resolveTemplate(body: string, vars: Record<string, string>): string {
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
   // Deferred intro texts: homeowners added during quiet hours, not yet texted
   const { data: uncontacted } = await supabase
     .from('homeowners')
-    .select('*, profiles(pm_name, company_name, subscription_status)')
+    .select('*, profiles(pm_name, company_name, subscription_status, sms_cap)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', false)
     .eq('is_test', false)
@@ -154,7 +155,10 @@ export async function POST(request: NextRequest) {
           message_type: 'intro',
         })
         if (logErr) console.error(`sms_logs insert failed for intro to ${h.phone}:`, logErr)
-        else introSent++
+        else {
+          introSent++
+          await bumpSmsCount(supabase, h.roofer_id, profile.sms_cap ?? 1000, profile.company_name ?? profile.pm_name ?? 'Account')
+        }
       } catch (err: any) {
         console.error(`Deferred opt-in SMS failed to ${h.phone}:`, err)
         // 21211/21612/21614 = invalid/unreachable number — stop retrying
@@ -335,7 +339,11 @@ export async function POST(request: NextRequest) {
     if (!profile || profile.subscription_status !== 'active') continue
     if (pmPhoneSet.has(normalizePhone(homeowner.phone))) continue // never text a contractor's own number
     if (confirmedSet.has(homeowner.id)) continue // already has a confirmed inspection — don't re-pitch or clobber it
-    if (profile.sms_count_this_month >= profile.sms_cap) continue
+    // sms_cap (default 1,000) is the included-tier / upsell trigger, NOT a wall —
+    // keep sending past it (bumpSmsCount pings Justin once on the crossing). Only
+    // the higher per-account runaway ceiling actually stops a single account from
+    // draining the global budget and starving everyone else.
+    if (profile.sms_count_this_month >= PER_ACCOUNT_HARD_CEILING) continue
 
     const alerts = alertsByZip[homeowner.zip_code] ?? []
     if (!alerts.length) continue
@@ -462,8 +470,7 @@ export async function POST(request: NextRequest) {
 
       stormAlertedThisRun.add(homeowner.id)
       sentLast48hPhones.add(homeowner.phone)
-      const { error: incErr } = await supabase.rpc('increment_sms_count', { p_id: profile.id })
-      if (incErr) console.error('increment_sms_count failed — per-roofer SMS cap will NOT enforce:', incErr)
+      await bumpSmsCount(supabase, profile.id, profile.sms_cap ?? 1000, profile.company_name ?? profile.pm_name ?? 'Account')
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)

@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildIntroSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
+import { bumpSmsCount } from '@/app/_lib/sms-meter'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { homeownerCreatesLast24h, HOMEOWNER_DAILY_LIMIT } from '@/app/_lib/rate-limit'
 import { isSameOrigin } from '@/app/_lib/csrf'
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
   const service = await createServiceClient()
   const { data: profile } = await service
     .from('profiles')
-    .select('pm_name, company_name, subscription_status')
+    .select('pm_name, company_name, subscription_status, sms_cap')
     .eq('id', user.id)
     .single()
 
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
       direction: 'outbound',
       status: 'sent',
     })
+    // Meter this send toward the per-account monthly count + upsell signal.
+    await bumpSmsCount(service, user.id, profile?.sms_cap ?? 1000, profile?.company_name ?? pmName)
   } catch (err) {
     smsError = err instanceof Error ? err.message : String(err)
     console.error('Intro SMS failed:', smsError)
