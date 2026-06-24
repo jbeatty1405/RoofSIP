@@ -253,10 +253,23 @@ export async function POST(request: NextRequest) {
     .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
     .limit(10000)
 
-  // Geocache all unique ZIPs in one batch for both monitor-only and active homeowners
+  // Opt-in non-responders: consented but never replied YES (not monitor-only, not
+  // opted out — STOP sets tcpa_consent=false, so those are excluded). When a storm
+  // hits their zip we don't text them; we hand the PM a hot lead to call personally.
+  const { data: unconfirmedHomeowners } = await supabase
+    .from('homeowners')
+    .select('id, name, phone, address, zip_code, roofer_id, profiles(subscription_status)')
+    .eq('tcpa_consent', true)
+    .eq('sms_confirmed', false)
+    .eq('monitor_only', false)
+    .eq('is_test', false)
+    .limit(10000)
+
+  // Geocache all unique ZIPs in one batch for monitor-only, active, and unconfirmed homeowners
   const allZips = [...new Set([
     ...(monitorOnlyHomeowners ?? []).map((h: any) => h.zip_code),
     ...(activeHomeowners ?? []).map((h: any) => h.zip_code),
+    ...(unconfirmedHomeowners ?? []).map((h: any) => h.zip_code),
   ].filter(Boolean))] as string[]
 
   const geoCache = await buildGeoCache(supabase, allZips)
@@ -288,6 +301,32 @@ export async function POST(request: NextRequest) {
         homeowner_id: h.id,
         type: 'hot_lead',
         message: `Storm hit ${h.name}'s area (${h.address}). They're monitor-only — give them a call to get consent and schedule their free inspection. Call: ${h.phone}`,
+      })
+    }
+  }
+
+  // Opt-in non-responders: storm hit, but they never replied YES. Don't text them —
+  // hand the PM a hot lead to call personally. Same once-per-day dedup as monitor-only.
+  if (unconfirmedHomeowners?.length) {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: unconfirmedNotifiedToday } = await supabase
+      .from('notifications')
+      .select('homeowner_id')
+      .in('homeowner_id', unconfirmedHomeowners.map((h: any) => h.id))
+      .gte('created_at', `${today}T00:00:00Z`)
+    const unconfirmedNotifiedSet = new Set(unconfirmedNotifiedToday?.map((n: any) => n.homeowner_id))
+
+    for (const h of unconfirmedHomeowners as any[]) {
+      const profile = h.profiles
+      if (!profile || profile.subscription_status !== 'active') continue
+      if (unconfirmedNotifiedSet.has(h.id)) continue
+      const alerts = alertsByZip[h.zip_code] ?? []
+      if (!alerts.length) continue
+      await supabase.from('notifications').insert({
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        type: 'hot_lead',
+        message: `Storm hit ${h.name}'s area (${h.address}). They didn't reply to the opt-in text, so they're not getting auto-texts — call them to lock in the free inspection. Call: ${h.phone}`,
       })
     }
   }
