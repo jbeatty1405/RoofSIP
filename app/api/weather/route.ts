@@ -3,7 +3,8 @@ import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
-import { getMarketById, getNextAvailableSlot, formatSlot } from '@/app/_lib/markets'
+import { getMarketById, getNextAvailableSlot, formatSlot, DEFAULT_MARKET } from '@/app/_lib/markets'
+import { notifyRoofer } from '@/app/_lib/notify'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { bumpSmsCount, PER_ACCOUNT_HARD_CEILING } from '@/app/_lib/sms-meter'
 import { NextRequest, NextResponse } from 'next/server'
@@ -115,6 +116,41 @@ export async function POST(request: NextRequest) {
   // top of is_test filtering below.
   const { data: pmRows } = await supabase.from('profiles').select('pm_phone')
   const pmPhoneSet = new Set((pmRows ?? []).map((p: any) => normalizePhone(p.pm_phone)).filter(Boolean))
+
+  // ── 48h opt-in nudge ──────────────────────────────────────────────────────
+  // A homeowner who consented at signup but never replied YES can't be auto-
+  // texted (TCPA). After 48h with no YES, hand the PM a hot lead to call and
+  // secure the opt-in, so loaded homeowners don't just rot. Storm-independent;
+  // fires once per homeowner (deduped on the message marker).
+  {
+    const optinCutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+    const { data: staleOptins } = await supabase
+      .from('homeowners')
+      .select('id, name, phone, roofer_id, profiles(subscription_status)')
+      .eq('tcpa_consent', true)
+      .eq('is_test', false)
+      .eq('sms_confirmed', false)
+      .eq('monitor_only', false)
+      .lt('created_at', optinCutoff)
+      .limit(500)
+
+    for (const h of (staleOptins ?? []) as any[]) {
+      if (h.profiles?.subscription_status !== 'active') continue
+      // Once per homeowner: skip if we already sent the opt-in nudge.
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('homeowner_id', h.id)
+        .ilike('message', '%opted in to texts%')
+      if (count && count > 0) continue
+      await notifyRoofer(supabase, {
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        pushTitle: '📲 Opt-in needed',
+        message: `${h.name} hasn't opted in to texts — no reply in 48h. Call ${h.phone} and have them reply YES so we can send storm alerts. Until they do, we can't text them.`,
+      })
+    }
+  }
 
   // Deferred intro texts: homeowners added during quiet hours, not yet texted
   const { data: uncontacted } = await supabase
@@ -296,11 +332,11 @@ export async function POST(request: NextRequest) {
       if (monitorNotifiedSet.has(h.id)) continue
       const alerts = alertsByZip[h.zip_code] ?? []
       if (!alerts.length) continue
-      await supabase.from('notifications').insert({
+      await notifyRoofer(supabase, {
         roofer_id: h.roofer_id,
         homeowner_id: h.id,
-        type: 'hot_lead',
-        message: `Storm hit ${h.name}'s area (${h.address}). They're monitor-only — give them a call to get consent and schedule their free inspection. Call: ${h.phone}`,
+        pushTitle: '⛈️ Storm lead',
+        message: `Storm just hit ${h.name}'s area (${h.address}). You're only monitoring them — no texts go out. Call ${h.phone} to offer the free inspection.`,
       })
     }
   }
@@ -322,11 +358,11 @@ export async function POST(request: NextRequest) {
       if (unconfirmedNotifiedSet.has(h.id)) continue
       const alerts = alertsByZip[h.zip_code] ?? []
       if (!alerts.length) continue
-      await supabase.from('notifications').insert({
+      await notifyRoofer(supabase, {
         roofer_id: h.roofer_id,
         homeowner_id: h.id,
-        type: 'hot_lead',
-        message: `Storm hit ${h.name}'s area (${h.address}). They didn't reply to the opt-in text, so they're not getting auto-texts — call them to lock in the free inspection. Call: ${h.phone}`,
+        pushTitle: '⛈️ Storm lead — call now',
+        message: `Storm just hit ${h.name}'s area (${h.address}). They never confirmed texts, so we couldn't auto-alert them. Call ${h.phone} now — offer the free inspection while it's fresh, and have them reply YES for future alerts.`,
       })
     }
   }
@@ -409,18 +445,21 @@ export async function POST(request: NextRequest) {
     const firstName = homeowner.name.split(' ')[0]
     const pmName = profile.pm_name ?? 'Your inspector'
     const market = await getMarketById(supabase, homeowner.market_id)
+    // Homeowners with no market assigned still get the next available time from
+    // standard hours, instead of dead-ending on a "no schedule set" no-time text.
+    const effectiveMarket = market ?? DEFAULT_MARKET
 
     let message: string
     let proposedSlot: Date | null = null
 
-    if (market && market.auto_schedule) {
+    if (effectiveMarket.auto_schedule) {
       // Reserve a unique slot BEFORE sending. The partial unique index on
       // (roofer_id, proposed_slot) makes a racing reservation fail with 23505;
       // on conflict we recompute the next open slot and retry — so two homeowners
       // can never be offered (or booked into) the same time, even across
       // overlapping cron runs.
       for (let attempt = 0; attempt < 6 && !proposedSlot; attempt++) {
-        const slot = await getNextAvailableSlot(supabase, market, profile.id)
+        const slot = await getNextAvailableSlot(supabase, effectiveMarket, profile.id)
         const { error: reserveErr } = await supabase.from('pending_bookings').upsert({
           homeowner_id: homeowner.id,
           roofer_id: homeowner.roofer_id,
@@ -464,16 +503,14 @@ export async function POST(request: NextRequest) {
           : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
       }
     } else {
-      // No timed offer: auto-schedule off, no market, or no open slot could be reserved.
+      // Reached only when a real market has auto-scheduling turned OFF (the PM's
+      // choice) — a no-market homeowner now falls back to DEFAULT_MARKET above.
       message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
-      const noScheduleReason = !market
-        ? 'No schedule set'
-        : (!market.auto_schedule ? `Auto-schedule is off for ${market.name}` : 'No open slot available')
-      await supabase.from('notifications').insert({
+      await notifyRoofer(supabase, {
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,
-        type: 'hot_lead',
-        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. ${noScheduleReason} — reach out to book their free inspection. Call: ${homeowner.phone}`,
+        pushTitle: '⛈️ Storm lead',
+        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. Auto-schedule is off for ${effectiveMarket.name} — reach out to book their free inspection. Call: ${homeowner.phone}`,
       })
     }
 

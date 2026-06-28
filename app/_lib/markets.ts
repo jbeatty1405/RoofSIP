@@ -24,6 +24,21 @@ export async function getMarketById(
   return (data as Market) ?? null
 }
 
+// Fallback when a homeowner has no market assigned yet, so Hailey can still
+// offer the next available time instead of dead-ending on "no schedule set".
+// Standard Arizona business hours, Mon–Fri 8am–5pm. The id is the nil UUID so
+// getNextAvailableSlot's blocked-dates lookup stays type-valid and matches
+// nothing (a homeowner with no market has no per-market blocked dates anyway).
+export const DEFAULT_MARKET: Market = {
+  id: '00000000-0000-0000-0000-000000000000',
+  roofer_id: '00000000-0000-0000-0000-000000000000',
+  name: 'your area',
+  auto_schedule: true,
+  working_days: [1, 2, 3, 4, 5],
+  working_hours_start: '08:00',
+  working_hours_end: '17:00',
+}
+
 // Homeowners are in Arizona (MST year-round, UTC-7, no DST), but the server runs
 // in UTC. All slot math and display must be done in Phoenix time, or a slot meant
 // for 9am gets stored/shown as 2am. See PHOENIX_OFFSET_MS below for the math side.

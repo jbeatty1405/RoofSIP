@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { getTwilioClient } from '@/app/_lib/twilio'
+import { notifyRoofer } from '@/app/_lib/notify'
 import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { preClassifyIntent } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
@@ -182,10 +183,10 @@ export async function POST(request: NextRequest) {
   // reserved at send time, so confirming it can never double-book another homeowner.
   if (intent?.type === 'confirmed') {
     await supabase.from('pending_bookings').update({ status: 'confirmed' }).eq('id', pending.id)
-    await supabase.from('notifications').insert({
+    await notifyRoofer(supabase, {
       roofer_id: homeowner.roofer_id,
       homeowner_id: homeowner.id,
-      type: 'hot_lead',
+      pushTitle: '📅 Inspection booked',
       message: `${homeowner.name} confirmed ${proposedStr} at ${homeowner.address}. Call them at ${homeowner.phone}.`,
     })
     if (profile?.pm_email) {
@@ -211,10 +212,11 @@ export async function POST(request: NextRequest) {
   // we never parse a time from the homeowner. Free the held slot and generate a direct
   // PM call — this is what removes every double-booking path.
   await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
-  await supabase.from('notifications').insert({
+  await notifyRoofer(supabase, {
     roofer_id: homeowner.roofer_id,
     homeowner_id: homeowner.id,
     type: 'call_needed',
+    pushTitle: '📞 Call to reschedule',
     message: `${homeowner.name} couldn't confirm ${proposedStr} — give them a call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
   })
   if (profile?.pm_email) {
