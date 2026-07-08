@@ -1,5 +1,5 @@
 import { createClient } from '@/app/_lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import AdminPanel from './AdminPanel'
 
 const ADMIN_USER_ID = '759e00cd-34ae-45c7-b56f-e8f8cf4eed36'
@@ -7,7 +7,8 @@ const ADMIN_USER_ID = '759e00cd-34ae-45c7-b56f-e8f8cf4eed36'
 export default async function AdminPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user || user.id !== ADMIN_USER_ID) redirect('/login')
+  if (!user) redirect('/login')
+  if (user.id !== ADMIN_USER_ID) notFound()
 
   return (
     <div className="min-h-screen bg-zinc-950 p-8">
