@@ -171,7 +171,7 @@ export default function LandingPage() {
               Sign in →
             </Link>
           </div>
-          <p className="text-zinc-600 text-sm mt-4">No credit card required · Cancel anytime</p>
+          <p className="text-zinc-600 text-sm mt-4">60 days free · No charge today · Cancel anytime</p>
         </div>
 
         {/* Mock SMS preview */}
@@ -319,7 +319,7 @@ export default function LandingPage() {
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
             Ready to turn storms into revenue?
           </h2>
-          <p className="text-zinc-400 mb-8">Start your free trial today. No credit card, no commitment.</p>
+          <p className="text-zinc-400 mb-8">Start your free trial today. No charge for 60 days, cancel anytime.</p>
           <Link
             href="/signup"
             className="inline-block bg-sky-500 hover:bg-sky-400 text-white font-semibold px-10 py-4 rounded-xl text-lg transition-colors shadow-xl shadow-sky-500/20"
