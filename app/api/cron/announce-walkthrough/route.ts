@@ -49,6 +49,24 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  if (messages.length === 0) {
+    return NextResponse.json({ sent: 0, reason: 'no active subscribers with push tokens' })
+  }
+
+  // Hard dedupe: atomically claim the send. `flag` is the primary key, so a
+  // second run hits a unique violation and is refused — a double-trigger can
+  // never re-blast. (To intentionally re-send, delete the 'walkthrough_announced'
+  // row from app_flags first.)
+  const { error: claimErr } = await supabase
+    .from('app_flags')
+    .insert({ flag: 'walkthrough_announced', enabled: true })
+  if (claimErr) {
+    if (claimErr.code === '23505') {
+      return NextResponse.json({ alreadySent: true, reason: 'already sent once — refusing to re-send' })
+    }
+    return NextResponse.json({ error: claimErr.message }, { status: 500 })
+  }
+
   await sendExpoPush(messages)
   return NextResponse.json({ sent: messages.length })
 }
