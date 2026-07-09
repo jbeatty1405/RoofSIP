@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient } from '@/app/_lib/supabase/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { stripe } from '@/app/_lib/stripe'
 import { NextResponse } from 'next/server'
 
@@ -33,7 +34,15 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const service = await createServiceClient()
+  // True service-role client (no user cookie) so RLS is bypassed and we can read
+  // every contractor's profile + the GoTrue admin API. The cookie-based
+  // createServiceClient() would authorize as the logged-in admin and RLS would
+  // scope the read to a single row.
+  const service = createServiceRoleClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, ''),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''),
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  )
 
   const [{ data: profiles }, authList, homeownersRes, bookingsRes] = await Promise.all([
     service
@@ -105,7 +114,6 @@ export async function GET() {
       sms_cap: p.sms_cap ?? 0,
       homeowners: homeownerCounts[p.id] ?? 0,
       bookings: bookingCounts[p.id] ?? 0,
-      // Billing truth from Stripe (null if never checked out)
       stripe_status: s?.status ?? null,
       monthly_amount: s?.amount ?? null,
       trial_end: s?.trialEnd ?? null,
