@@ -100,10 +100,16 @@ export default function AdminPanel() {
   const stats = useMemo(() => {
     const paying = users.filter(u => billingKind(u) === 'paying')
     const trialing = users.filter(u => billingKind(u) === 'trialing').length
+    const pastDue = users.filter(u => billingKind(u) === 'past_due').length
     const neverPaid = users.filter(u => billingKind(u) === 'never_paid').length
     const new7 = users.filter(u => ageDays(u.created_at) <= 7).length
     const mrr = paying.reduce((sum, u) => sum + (u.monthly_amount ?? 0), 0) / 100
-    return { paying: paying.length, trialing, neverPaid, new7, mrr }
+    // Live subscriber count = anyone with a non-canceled Stripe sub (paying,
+    // in trial, or past due). This is the number that should match Stripe's
+    // active-subscription count. Test logins (e.g. playwright-test) have no
+    // profile row, so they never appear here.
+    const subscribers = paying.length + trialing + pastDue
+    return { paying: paying.length, trialing, pastDue, neverPaid, new7, mrr, subscribers }
   }, [users])
 
   const filtered = useMemo(() => users.filter(u => {
@@ -134,7 +140,8 @@ export default function AdminPanel() {
   return (
     <div>
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="matches Stripe" />
         <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" />
         <Stat label="Paying" value={String(stats.paying)} accent="text-green-400" />
         <Stat label="On trial" value={String(stats.trialing)} accent="text-sky-400" />
@@ -250,11 +257,12 @@ export default function AdminPanel() {
   )
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent: string }) {
+function Stat({ label, value, accent, hint }: { label: string; value: string; accent: string; hint?: string }) {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
       <div className={`text-2xl font-bold ${accent}`}>{value}</div>
       <div className="text-[11px] uppercase tracking-wide text-zinc-500 mt-0.5">{label}</div>
+      {hint && <div className="text-[10px] text-zinc-600 mt-0.5">{hint}</div>}
     </div>
   )
 }
