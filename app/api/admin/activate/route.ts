@@ -1,4 +1,5 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient } from '@/app/_lib/supabase/server'
+import { createClient as createServiceRoleClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 const ADMIN_USER_ID = '759e00cd-34ae-45c7-b56f-e8f8cf4eed36'
@@ -17,7 +18,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 
-  const service = await createServiceClient()
+  // True service-role client (no user cookie) so RLS is bypassed and we can look
+  // up any user and update another contractor's profile. The cookie-based
+  // createServiceClient() authorizes as the logged-in admin, so RLS would block
+  // the cross-user update (0 rows) and the GoTrue admin API would be unauthorized.
+  const service = createServiceRoleClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, ''),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''),
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  )
 
   // Find user by email
   const { data: { users }, error: lookupErr } = await service.auth.admin.listUsers()
