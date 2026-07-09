@@ -1,0 +1,25 @@
+name: Weekly add-5-roofs challenge
+
+# Nudges every PM (with a push token) to load more roofs into their SIP.
+# Hits the CRON_SECRET-gated /api/cron/weekly-challenge endpoint, which is a
+# DRY RUN until WEEKLY_CHALLENGE_ENABLED=true is set in Vercel — so scheduling
+# this now sends nothing. workflow_dispatch lets you preview the recipient count
+# on demand (Actions tab -> Run workflow).
+on:
+  schedule:
+    - cron: '0 15 * * 1' # Mondays 15:00 UTC = 8:00am Arizona (no DST)
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit weekly challenge endpoint
+        run: |
+          code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://roofsip.vercel.app/api/cron/weekly-challenge)
+          echo "HTTP $code"
+          cat /tmp/out.txt
+          echo
+          test "$code" = "200"
