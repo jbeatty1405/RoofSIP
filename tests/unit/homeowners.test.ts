@@ -136,6 +136,35 @@ describe('POST /api/homeowners', () => {
     )
   })
 
+  it('accepts a monitor-only lead with no phone (address-only)', async () => {
+    const { homeownerCreatesLast24h } = await import('@/app/_lib/rate-limit')
+    vi.mocked(homeownerCreatesLast24h).mockResolvedValue(0)
+    const res = await POST(makeRequest({
+      name: 'Address Only',
+      address: '789 Pine St',
+      zipCode: '85001',
+      monitorOnly: true,
+    }))
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.id).toBe('hw_new')
+    expect(mockTwilioCreate).not.toHaveBeenCalled()
+  })
+
+  it('still rejects a consent lead with no phone', async () => {
+    const { homeownerCreatesLast24h } = await import('@/app/_lib/rate-limit')
+    vi.mocked(homeownerCreatesLast24h).mockResolvedValue(0)
+    const res = await POST(makeRequest({
+      name: 'Needs Phone',
+      address: '1 Main',
+      zipCode: '85001',
+      monitorOnly: false,
+    }))
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error).toMatch(/phone/i)
+  })
+
   it('returns 429 when daily limit reached', async () => {
     const { homeownerCreatesLast24h } = await import('@/app/_lib/rate-limit')
     vi.mocked(homeownerCreatesLast24h).mockResolvedValue(50)

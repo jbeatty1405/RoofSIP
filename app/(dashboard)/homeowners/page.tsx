@@ -105,7 +105,9 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
                     </div>
                   </td>
                   <td className="px-5 py-3.5">
-                    <a href={`tel:${h.phone}`} className="text-sm text-zinc-400 hover:text-sky-400 transition-colors">{h.phone}</a>
+                    {h.phone
+                      ? <a href={`tel:${h.phone}`} className="text-sm text-zinc-400 hover:text-sky-400 transition-colors">{h.phone}</a>
+                      : <span className="text-sm text-zinc-600">—</span>}
                   </td>
                   <td className="px-5 py-3.5 text-sm text-zinc-400">{h.address}</td>
                   <td className="px-5 py-3.5 text-sm text-zinc-400">{(h as any).markets?.name ?? <span className="text-zinc-600">—</span>}</td>

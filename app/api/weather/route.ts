@@ -336,7 +336,7 @@ export async function POST(request: NextRequest) {
         roofer_id: h.roofer_id,
         homeowner_id: h.id,
         pushTitle: '⛈️ Storm lead',
-        message: `Storm just hit ${h.name}'s area (${h.address}). You're only monitoring them — no texts go out. Call ${h.phone} to offer the free inspection.`,
+        message: `Storm just hit ${h.name}'s area (${h.address}). You're only monitoring them — no texts go out. ${h.phone ? `Call ${h.phone}` : 'Reach out'} to offer the free inspection.`,
       })
     }
   }

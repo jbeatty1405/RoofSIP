@@ -85,6 +85,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: homeowner.id, smsSkipped: 'inactive_subscription' })
   }
 
+  // Consent leads always have a validated phone; this guard is a type-safety net
+  // now that phone can be NULL for monitor-only leads (which never reach here).
+  if (!phone) {
+    return NextResponse.json({ id: homeowner.id })
+  }
+
   const pmName = profile?.pm_name ?? 'Your contractor'
   const introMsg = buildIntroSms(pmName, name, profile?.company_name ?? undefined)
 
@@ -120,7 +126,7 @@ type ValidHomeowner = {
   address: string
   zipCode: string
   photoUrls: string[]
-  phone: string
+  phone: string | null
   tcpaConsent: boolean
   marketId: string | null
   monitorOnly: boolean
@@ -133,6 +139,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
   const rawPhone = typeof body.phone === 'string' ? body.phone : ''
   const tcpaConsent = body.tcpaConsent === true
   const marketId = typeof body.marketId === 'string' && body.marketId ? body.marketId : null
+  const monitorOnly = body.monitorOnly === true
 
   if (!name) return { error: 'Name required' }
   if (name.length > MAX_NAME) return { error: 'Name too long' }
@@ -141,8 +148,16 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
   if (!/^\d{5}(-\d{4})?$/.test(zipCode)) return { error: 'Invalid ZIP code' }
   if (zipCode.length > MAX_ZIP) return { error: 'ZIP too long' }
 
-  const phone = normalizePhone(rawPhone)
-  if (!/^\+1\d{10}$/.test(phone)) return { error: 'Invalid phone number' }
+  // Monitor-only leads can be added address-only (e.g. a roof you haven't spoken
+  // to yet) — phone is optional and stored as NULL. If a phone IS provided, it's
+  // still validated. Consent leads always require a valid phone (they get texted).
+  let phone: string | null
+  if (!rawPhone.trim() && monitorOnly) {
+    phone = null
+  } else {
+    phone = normalizePhone(rawPhone)
+    if (!/^\+1\d{10}$/.test(phone)) return { error: 'Invalid phone number' }
+  }
 
   const photoUrlsRaw = Array.isArray(body.photoUrls) ? body.photoUrls : []
   if (photoUrlsRaw.length > MAX_PHOTOS) return { error: `Max ${MAX_PHOTOS} photos` }
@@ -153,8 +168,6 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
     if (!/^https?:\/\//.test(u)) return { error: 'Photo URL must be http(s)' }
     photoUrls.push(u)
   }
-
-  const monitorOnly = body.monitorOnly === true
 
   return { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId, monitorOnly }
 }

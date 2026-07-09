@@ -184,8 +184,13 @@ export default function NewHomeownerPage() {
           <input id="ho-name" type="text" value={form.name} onChange={e => set('name', e.target.value)} required className={inputClass} placeholder="Sarah Johnson" />
         </div>
         <div>
-          <label htmlFor="ho-phone" className="block text-sm font-medium text-zinc-300 mb-1.5">Phone number</label>
-          <input id="ho-phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="+1 (555) 000-0000" className={inputClass} />
+          <label htmlFor="ho-phone" className="block text-sm font-medium text-zinc-300 mb-1.5">
+            Phone number{monitorOnly === true && <span className="text-zinc-500 font-normal"> (optional)</span>}
+          </label>
+          <input id="ho-phone" type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} required={monitorOnly !== true} placeholder="+1 (555) 000-0000" className={inputClass} />
+          {monitorOnly === true && (
+            <p className="text-xs text-zinc-500 mt-1.5">Leave blank if you only have the address — you'll still get a hot lead to call when a storm hits.</p>
+          )}
         </div>
         <div className="relative">
           <label htmlFor="ho-address" className="block text-sm font-medium text-zinc-300 mb-1.5">Address</label>

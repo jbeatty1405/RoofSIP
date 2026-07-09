@@ -65,7 +65,9 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
           <div>
             <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Phone</dt>
             <dd className="text-sm text-zinc-300 mt-1">
-              <a href={`tel:${homeowner.phone}`} className="hover:text-sky-400 transition-colors">{homeowner.phone}</a>
+              {homeowner.phone
+                ? <a href={`tel:${homeowner.phone}`} className="hover:text-sky-400 transition-colors">{homeowner.phone}</a>
+                : <span className="text-zinc-500">No phone — monitoring only</span>}
             </dd>
           </div>
           <div>
