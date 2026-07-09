@@ -61,6 +61,15 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
           <p className="text-sm text-zinc-500 mt-1">{homeowners?.length ?? 0} total{optedOut.length > 0 ? ` · ${optedOut.length} opted out` : ''}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/homeowners/import"
+            className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-lg text-sm font-medium hover:bg-zinc-700 hover:text-zinc-200 transition-colors flex items-center gap-1.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Import
+          </Link>
           <a
             href="/api/homeowners/export"
             className="px-3 py-2 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-lg text-sm font-medium hover:bg-zinc-700 hover:text-zinc-200 transition-colors flex items-center gap-1.5"
