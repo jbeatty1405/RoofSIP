@@ -1,0 +1,29 @@
+name: Announce walk-through to subscribers
+
+# One-time push to active subscribers pointing them at the in-app walk-through.
+# Manual only. Run with send=false first to preview the recipient count in the
+# logs; run again with send=true to actually send. Tapping the push opens the
+# walk-through (deep-link wired in the mobile app).
+on:
+  workflow_dispatch:
+    inputs:
+      send:
+        description: 'Actually send? (false = dry-run preview)'
+        type: boolean
+        default: false
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit announce endpoint
+        run: |
+          Q=""
+          if [ "${{ inputs.send }}" = "true" ]; then Q="?send=1"; fi
+          code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://roofsip.vercel.app/api/cron/announce-walkthrough${Q}")
+          echo "HTTP $code (send=${{ inputs.send }})"
+          cat /tmp/out.txt
+          echo
+          test "$code" = "200"
