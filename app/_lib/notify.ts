@@ -4,11 +4,15 @@
 // `notifications.insert(...)` are routed through here so they gain a push with
 // no change to how the app queries notifications.
 //
-// IMPORTANT (non-breaking): `type` defaults to 'hot_lead' because the mobile app
-// filters the hot-leads list and dashboard count on `type = 'hot_lead'`
-// (roofsip-mobile hot-leads.tsx / (tabs)/index.tsx). Granular per-situation
-// distinction is carried by `pushTitle` + the message text, not by changing the
-// stored type — that split needs a coordinated mobile release.
+// `type` defaults to 'hot_lead' — a homeowner the PM should call. The mobile
+// hot-leads list and dashboard count filter on `type = 'hot_lead'`, so anything
+// that is NOT a call-this-person lead must pass an explicit type, or it inflates
+// the PM's call list. Current types: hot_lead, call_needed, booking_confirmed
+// (a won appointment), admin_alert (owner-only, not a lead).
+//
+// Both apps read "calls needed" as an allowlist rather than "not a hot lead", so
+// adding a new type here is safe — it won't silently land in the call list — but
+// the apps won't render it specially until they're taught about it.
 
 import { sendExpoPush } from './push'
 

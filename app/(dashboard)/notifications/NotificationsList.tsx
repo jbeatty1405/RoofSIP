@@ -33,7 +33,12 @@ export default function NotificationsList({ notifications }: { notifications: No
   const handled = notifications.filter(n => n.dismissed_at)
 
   const hotLeads = active.filter(n => n.type === 'hot_lead')
-  const callsNeeded = active.filter(n => n.type !== 'hot_lead')
+  const booked = active.filter(n => n.type === 'booking_confirmed')
+  // Anything not otherwise classified is a call to make; admin_alert is an owner
+  // alert (new subscriber, trial converted) and isn't a lead at all.
+  const callsNeeded = active.filter(
+    n => !['hot_lead', 'booking_confirmed', 'admin_alert'].includes(n.type),
+  )
   const allSelected = active.length > 0 && selected.size === active.length
 
   function toggle(id: string) {
@@ -227,6 +232,25 @@ export default function NotificationsList({ notifications }: { notifications: No
                 n={n}
                 accent="border-red-500/30"
                 badge={{ label: 'Call them', className: 'text-red-400 bg-red-500/10' }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {booked.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-green-400" />
+            <h2 className="text-xs font-semibold text-green-400 uppercase tracking-wider">Booked</h2>
+          </div>
+          <div className="flex flex-col gap-3">
+            {booked.map(n => (
+              <Card
+                key={n.id}
+                n={n}
+                accent="border-green-500/30"
+                badge={{ label: 'Inspection booked', className: 'text-green-400 bg-green-500/10' }}
               />
             ))}
           </div>

@@ -186,6 +186,9 @@ export async function POST(request: NextRequest) {
     await notifyRoofer(supabase, {
       roofer_id: homeowner.roofer_id,
       homeowner_id: homeowner.id,
+      // A won appointment is not a lead to call. Typing it 'hot_lead' (the
+      // default) put it in the "homeowners to call" list and inflated that count.
+      type: 'booking_confirmed',
       pushTitle: '📅 Inspection booked',
       message: `${homeowner.name} confirmed ${proposedStr} at ${homeowner.address}. Call them at ${homeowner.phone}.`,
     })
