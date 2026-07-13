@@ -131,7 +131,10 @@ export default function NotificationsList({ notifications }: { notifications: No
 
             <p className="text-xs text-zinc-600 mt-0.5">{n.homeowners?.address}</p>
             <p className="text-sm text-zinc-400 mt-2">{n.message}</p>
-            <p className="text-xs text-zinc-600 mt-2">{new Date(n.created_at).toLocaleString()}</p>
+            {/* toLocaleString resolves against the viewer's timezone, which the server can't know */}
+            <p className="text-xs text-zinc-600 mt-2" suppressHydrationWarning>
+              {new Date(n.created_at).toLocaleString()}
+            </p>
           </div>
 
           {dimmed ? (
