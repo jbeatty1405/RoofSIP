@@ -22,8 +22,8 @@ export default async function DashboardHome() {
     supabase.from('homeowners').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).eq('tcpa_consent', true),
     supabase.from('markets').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id),
     supabase.from('pending_bookings').select('id, proposed_slot, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('status', 'confirmed').gt('proposed_slot', new Date().toISOString()).order('proposed_slot', { ascending: true }).limit(10),
-    supabase.from('notifications').select('id, message, type, created_at, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('read', false).neq('type', 'hot_lead').order('created_at', { ascending: false }).limit(5),
-    supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).eq('read', false).neq('type', 'hot_lead'),
+    supabase.from('notifications').select('id, message, type, created_at, homeowners(name, phone, address)').eq('roofer_id', user!.id).is('dismissed_at', null).neq('type', 'hot_lead').order('created_at', { ascending: false }).limit(5),
+    supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).is('dismissed_at', null).neq('type', 'hot_lead'),
     supabase.from('sms_logs').select('sent_at').eq('roofer_id', user!.id).eq('direction', 'outbound').order('sent_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
