@@ -101,7 +101,19 @@ export async function POST(request: NextRequest) {
     const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
 
     if (isOptIn) {
-      await supabase.from('homeowners').update({ sms_confirmed: true }).eq('id', homeowner.id)
+      // A YES is the homeowner opting in themselves, so it clears monitor_only and
+      // grants consent. Without this a monitor-only homeowner would get the "you're
+      // all set" confirmation below but never match the storm query (which requires
+      // tcpa_consent=true, monitor_only=false) — promised alerts, silence forever.
+      await supabase
+        .from('homeowners')
+        .update({
+          sms_confirmed: true,
+          tcpa_consent: true,
+          tcpa_consent_at: new Date().toISOString(),
+          monitor_only: false,
+        })
+        .eq('id', homeowner.id)
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
       const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home. Msg frequency varies, msg & data rates may apply. Reply HELP for help, STOP to cancel.`
       await sendSms(twilio, fromPhone, confirmation)
