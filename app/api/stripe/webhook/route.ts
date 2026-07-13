@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
 import { sendWelcomeEmail, sendTrialEndingEmail } from '@/app/_lib/email'
+import { ADMIN_USER_ID, notifyAdmin, claimOnce, describePm } from '@/app/_lib/admin'
 import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -53,13 +54,24 @@ export async function POST(request: NextRequest) {
             subscription_status: 'active',
           })
           .eq('id', userId)
-          .select('pm_name')
+          .select('pm_name, company_name')
           .single()
 
         sendWelcomeEmail({
           to: authUser!.email!,
           pmName: updatedProfile?.pm_name ?? undefined,
         }).catch(err => console.error('[webhook] welcome email failed:', err))
+
+        // Owner alert: they handed over a card, so this is the real signup moment.
+        // Skipped when the admin subscribes himself (no self-alerts).
+        if (userId !== ADMIN_USER_ID) {
+          const who = describePm(updatedProfile?.pm_name, updatedProfile?.company_name)
+          await notifyAdmin(supabase, {
+            title: '🎉 New RoofSIP subscriber',
+            message: `${who} just signed up. Card on file, 60-day trial started.`,
+            data: { event: 'signup', userId, email: authUser!.email! },
+          })
+        }
       } else {
         console.error('Stripe webhook: customer/user mismatch', { userId, customerId })
       }
@@ -115,6 +127,34 @@ export async function POST(request: NextRequest) {
         .from('profiles')
         .update({ subscription_status: 'active' })
         .eq('stripe_subscription_id', subId)
+    }
+
+    // Owner alert: real money actually moved (trial invoices are $0, so they're
+    // skipped). This event repeats every billing cycle, so `claimOnce` pins the
+    // alert to the FIRST paid invoice only — the trial-to-paid conversion.
+    if (event.type === 'invoice.payment_succeeded' && subId && (obj.amount_paid ?? 0) > 0) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, pm_name, company_name')
+        .eq('stripe_subscription_id', subId)
+        .maybeSingle()
+
+      if (profile && profile.id !== ADMIN_USER_ID) {
+        const first = await claimOnce(
+          supabase,
+          `first_payment:${subId}`,
+          `first paid invoice for ${profile.id}`,
+        )
+        if (first) {
+          const who = describePm(profile.pm_name, profile.company_name)
+          const amount = (obj.amount_paid / 100).toFixed(2)
+          await notifyAdmin(supabase, {
+            title: '💰 Trial converted',
+            message: `${who} just paid $${amount}. First real payment — they stuck.`,
+            data: { event: 'first_payment', userId: profile.id, subId },
+          })
+        }
+      }
     }
   }
 
