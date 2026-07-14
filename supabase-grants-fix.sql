@@ -29,3 +29,24 @@ grant select on public.sms_logs to authenticated;
 -- own subscription_status='active' (payment bypass). Only the columns the app
 -- legitimately edits are granted. RLS already restricts to auth.uid() = id.
 grant update (pm_name, company_name, push_token) on public.profiles to authenticated;
+
+-- 2026-07-14: SERVICE_ROLE was missing grants (not just `authenticated`). The
+-- storm cron uses the service-role key, which bypasses RLS but STILL needs a
+-- table-level GRANT. weather_events + zip_geocache were created by raw SQL
+-- outside Supabase's default privileges, so service_role got 42501 on both.
+--
+-- Impact (this was NOT cosmetic): buildGeoCache() in app/api/weather/route.ts
+-- reads zip_geocache -> denied -> empty cache EVERY run -> it re-geocodes every
+-- ZIP against Nominatim every hour, then the upsert write-back is denied too and
+-- the error is swallowed (never checked). So the cache never populated. If
+-- Nominatim throttles or blocks the burst, geocodeZip() returns null,
+-- alertsByZip[zip] = [], and the cron reports "no storms" instead of failing --
+-- storms get silently missed. This grant restores the cache and stops the
+-- per-hour re-geocode of every ZIP.
+grant select, insert, update on public.zip_geocache to service_role;
+
+-- weather_events: currently dead (nothing writes it), but the schema + RLS
+-- expect service_role to insert and authenticated to read. Granting so storm
+-- history can actually be logged rather than silently dropped.
+grant select, insert on public.weather_events to service_role;
+grant select on public.weather_events to authenticated;

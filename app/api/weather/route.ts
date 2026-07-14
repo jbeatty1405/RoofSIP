@@ -57,7 +57,10 @@ function pickTemplate(templates: any[], stormType: string): string | null {
   return (specific ?? fallback ?? active[0])?.body ?? null
 }
 
-// Geocode all ZIPs with DB cache — minimises Nominatim calls across cron runs
+// Geocode all ZIPs with DB cache — minimises geocoder calls across cron runs.
+// Both the read and the write-back used to swallow their errors, which hid a
+// missing service_role GRANT on zip_geocache: the cache silently never populated
+// and every ZIP was re-geocoded every hour. Surface both failures loudly.
 async function buildGeoCache(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   zips: string[]
@@ -65,16 +68,19 @@ async function buildGeoCache(
   const cache: Record<string, { lat: string; lon: string }> = {}
   if (!zips.length) return cache
 
-  const { data: cached } = await supabase.from('zip_geocache').select('zip, lat, lon').in('zip', zips)
+  const { data: cached, error: readErr } = await supabase.from('zip_geocache').select('zip, lat, lon').in('zip', zips)
+  if (readErr) console.error('[geocache] read failed — falling back to live geocoding for every ZIP:', readErr)
   for (const row of cached ?? []) cache[row.zip] = { lat: row.lat, lon: row.lon }
 
   const missing = zips.filter(z => !cache[z])
   await Promise.all(missing.map(async (zip) => {
     const point = await geocodeZip(zip)
-    if (point) {
-      cache[zip] = point
-      await supabase.from('zip_geocache').upsert({ zip, lat: point.lat, lon: point.lon, cached_at: new Date().toISOString() })
-    }
+    if (!point) return // geocodeZip already logged which providers failed
+    cache[zip] = point
+    const { error: writeErr } = await supabase
+      .from('zip_geocache')
+      .upsert({ zip, lat: point.lat, lon: point.lon, cached_at: new Date().toISOString() })
+    if (writeErr) console.error(`[geocache] write-back failed for ${zip} — cache will stay cold:`, writeErr)
   }))
 
   return cache
@@ -310,11 +316,36 @@ export async function POST(request: NextRequest) {
 
   const geoCache = await buildGeoCache(supabase, allZips)
 
+  // A ZIP we cannot geocode is NOT "no storm" — it is a blind spot. Previously
+  // both cases collapsed to an empty alert list, so a geocoder outage looked
+  // exactly like clear skies. Track them separately and report them.
+  const blindZips = allZips.filter(z => !geoCache[z])
+  if (blindZips.length) {
+    console.error(
+      `[weather] BLIND on ${blindZips.length}/${allZips.length} ZIP(s) — could not geocode, so storms there CANNOT be detected this run: ${blindZips.join(', ')}`
+    )
+  }
+
   const alertsByZip: Record<string, Awaited<ReturnType<typeof getAlertsForPoint>>> = {}
   await Promise.all(allZips.map(async (zip) => {
     const point = geoCache[zip]
     alertsByZip[zip] = point ? await getAlertsForPoint(point.lat, point.lon) : []
   }))
+
+  // Persist every storm we detect. weather_events existed in the schema but
+  // nothing ever wrote to it, so there was no record of what actually hit —
+  // only the downstream notification text. Best-effort: never block sends.
+  const detected = Object.entries(alertsByZip).filter(([, alerts]) => alerts.length > 0)
+  if (detected.length) {
+    const { error: eventErr } = await supabase.from('weather_events').insert(
+      detected.map(([zip, alerts]) => ({
+        zip_code: zip,
+        event_type: alerts[0].type,
+        description: alerts[0].headline,
+      }))
+    )
+    if (eventErr) console.error('[weather] weather_events insert failed:', eventErr)
+  }
 
   // Monitor-only: notify PM on storm hit, never text the homeowner
   if (monitorOnlyHomeowners?.length) {
@@ -571,5 +602,14 @@ export async function POST(request: NextRequest) {
       .eq('status', 'awaiting_ho_reply')
   }
 
-  return NextResponse.json({ sent: totalSent })
+  // Report blind ZIPs in the payload, not just the logs — the GitHub Actions
+  // scheduler asserts on this, so a geocoder outage fails the run visibly
+  // instead of returning a healthy-looking 200 with zero sends.
+  return NextResponse.json({
+    sent: totalSent,
+    zips_checked: allZips.length,
+    zips_blind: blindZips.length,
+    blind_zips: blindZips,
+    storms_detected: detected.length,
+  })
 }

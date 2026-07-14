@@ -22,3 +22,12 @@ jobs:
           cat /tmp/out.txt
           echo
           test "$code" = "200"
+
+          # A 200 is NOT proof the monitor is watching. If a ZIP can't be
+          # geocoded we cannot see storms there, and the run would otherwise
+          # look identical to "clear skies". Fail loudly so GitHub emails us.
+          blind=$(python3 -c "import json;print(json.load(open('/tmp/out.txt')).get('zips_blind',0))")
+          if [ "$blind" != "0" ]; then
+            echo "::error::Storm monitor is BLIND on $blind ZIP(s) — storms there cannot be detected."
+            exit 1
+          fi
