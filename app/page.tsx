@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Logo from '@/app/_components/Logo'
+import RecoveryRedirect from '@/app/_components/RecoveryRedirect'
 
 function StormIcon() {
   return (
@@ -109,6 +110,7 @@ const PLAN_FEATURES = [
 export default function LandingPage() {
   return (
     <div className="bg-zinc-950 text-zinc-200 min-h-screen overflow-x-hidden">
+      <RecoveryRedirect />
 
       {/* Nav */}
       <nav className="fixed top-0 inset-x-0 z-50 border-b border-zinc-800/60 bg-zinc-950/80 backdrop-blur-md">
