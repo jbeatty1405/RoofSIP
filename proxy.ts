@@ -32,6 +32,9 @@ export async function proxy(request: NextRequest) {
   const isApiRoute = pathname.startsWith('/api')
   const isPublicRoute =
     pathname === '/' ||
+    // password reset happens while signed out, by definition
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
     pathname.startsWith('/consent') ||
     pathname.startsWith('/privacy') ||
     pathname.startsWith('/terms') ||
