@@ -6,6 +6,7 @@ import CancelSubscriptionButton from './CancelSubscriptionButton'
 import MessageStyleForm from './MessageStyleForm'
 import SignOutButton from '@/app/_components/SignOutButton'
 import PmContactForm from './PmContactForm'
+import ChangePasswordForm from './ChangePasswordForm'
 import FeedbackForm from './FeedbackForm'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
@@ -45,6 +46,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <dd className="text-sm text-zinc-300 mt-1">{profile?.company_name || '—'}</dd>
             </div>
           </dl>
+        </div>
+
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="font-semibold text-zinc-200 mb-1">Password</h2>
+          <p className="text-xs text-zinc-600 mb-4">Change the password you use to sign in.</p>
+          <ChangePasswordForm />
         </div>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
