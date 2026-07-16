@@ -60,16 +60,20 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         const severity = (f.properties?.severity ?? '').toLowerCase()
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
-        const nonRoof = ['chill', 'heat', 'freeze', 'frost', 'cold']
+        // Only trigger on things that actually damage a roof. We deliberately do
+        // NOT pass on severity alone: NWS tags Flood Watches / Flash Flood
+        // Warnings as "Severe", and flooding does nothing to a roof. That
+        // severity catch-all was firing valley-wide "storm just hit" alerts off a
+        // single metro-wide Flood Watch. Match roof-damaging event names instead.
+        const nonRoof = ['chill', 'heat', 'freeze', 'frost', 'cold', 'flood', 'fog', 'air quality']
         if (nonRoof.some(k => event.includes(k))) return false
         return (
-          event.includes('thunder') ||
+          event.includes('thunder') || // Severe Thunderstorm Warning/Watch (hail + damaging wind)
           event.includes('hail') ||
-          event.includes('wind') ||
-          event.includes('rain') ||
-          event.includes('storm') ||
-          severity === 'severe' ||
-          severity === 'extreme'
+          event.includes('wind') || // High Wind / Wind Advisory / Extreme Wind
+          event.includes('storm') || // Dust Storm (haboob), Ice/Winter/Tropical Storm
+          event.includes('tornado') ||
+          event.includes('hurricane')
         )
       })
       .map((f: any) => ({
