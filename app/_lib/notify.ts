@@ -55,12 +55,30 @@ export async function notifyRoofer(supabase: DbClient, args: NotifyArgs): Promis
       .single()
 
     if (profile?.push_token) {
+      // iOS app-icon badge = the PM's unread alerts. "Unread" here is read=false
+      // (the same definition the web nav bell uses), so the number appears on a
+      // new alert and clears when the PM opens the app and views their alerts
+      // (which marks everything read). Runs after the insert above so the row we
+      // just created is included. Falls back to no badge if the count fails.
+      let badge: number | undefined
+      try {
+        const { count } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('roofer_id', args.roofer_id)
+          .eq('read', false)
+        if (typeof count === 'number') badge = count
+      } catch {
+        // Non-fatal: send the push without a badge rather than dropping it.
+      }
+
       await sendExpoPush([
         {
           to: profile.push_token,
           title: args.pushTitle,
           body: args.pushBody ?? args.message,
           data: { type, homeowner_id: args.homeowner_id ?? null, ...(args.data ?? {}) },
+          badge,
         },
       ])
     }

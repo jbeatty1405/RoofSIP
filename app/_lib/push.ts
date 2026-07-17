@@ -14,6 +14,12 @@ export type ExpoPushMessage = {
   title: string
   body: string
   data?: Record<string, unknown>
+  /**
+   * iOS app-icon badge count. iOS only shows a number on the icon if the push
+   * payload carries one — without this the app never gets a badge. Typically the
+   * recipient's unread notification count. Omitted/undefined => no badge change.
+   */
+  badge?: number
 }
 
 function isExpoToken(t: unknown): t is string {
@@ -50,6 +56,9 @@ export async function sendExpoPush(messages: ExpoPushMessage[]): Promise<void> {
           sound: 'default',
           priority: 'high',
           channelId: 'default',
+          // Only include badge when the caller provided one, so pushes that
+          // don't compute a count leave the existing badge untouched.
+          ...(typeof m.badge === 'number' ? { badge: m.badge } : {}),
         }))
       ),
     })
