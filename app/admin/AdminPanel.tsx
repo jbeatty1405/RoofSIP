@@ -10,6 +10,8 @@ type UserRow = {
   pm_phone: string | null
   pm_email: string | null
   subscription_status: string | null
+  is_internal: boolean
+  orphan: boolean
   created_at: string
   sms_used: number
   sms_cap: number
@@ -19,9 +21,10 @@ type UserRow = {
   monthly_amount: number | null // cents
   trial_end: number | null // unix seconds
   period_end: number | null // unix seconds
+  canceled_at: number | null // unix seconds
 }
 
-type Filter = 'all' | 'paying' | 'trialing' | 'never_paid' | 'dormant'
+type Filter = 'all' | 'paying' | 'trialing' | 'never_paid' | 'dormant' | 'churned' | 'internal'
 
 const DAY = 86400
 const now = () => Math.floor(Date.now() / 1000)
@@ -97,19 +100,40 @@ export default function AdminPanel() {
     setActionLoading('')
   }
 
+  async function toggleInternal(u: UserRow) {
+    setActionLoading(u.id)
+    setMessage('')
+    const res = await fetch('/api/admin/internal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: u.id, internal: !u.is_internal }),
+    })
+    const data = await res.json()
+    if (data.ok) {
+      setMessage(`✓ ${u.company_name || u.pm_name || u.email} marked ${data.internal ? 'internal' : 'external'}`)
+      await loadUsers()
+    } else {
+      setMessage(`✗ ${data.error}`)
+    }
+    setActionLoading('')
+  }
+
   const stats = useMemo(() => {
-    const paying = users.filter(u => billingKind(u) === 'paying')
-    const trialing = users.filter(u => billingKind(u) === 'trialing').length
-    const pastDue = users.filter(u => billingKind(u) === 'past_due').length
-    const neverPaid = users.filter(u => billingKind(u) === 'never_paid').length
-    const new7 = users.filter(u => ageDays(u.created_at) <= 7).length
+    // External = real customers. Internal Prowest seats are excluded from the
+    // headline subscriber/MRR/paying numbers so they reflect the actual business.
+    const ext = users.filter(u => !u.is_internal)
+    const paying = ext.filter(u => billingKind(u) === 'paying')
+    const trialing = ext.filter(u => billingKind(u) === 'trialing').length
+    const pastDue = ext.filter(u => billingKind(u) === 'past_due').length
+    const neverPaid = ext.filter(u => billingKind(u) === 'never_paid').length
+    const churned = users.filter(u => billingKind(u) === 'canceled').length
+    const internal = users.filter(u => u.is_internal).length
+    const new7 = ext.filter(u => !u.orphan && ageDays(u.created_at) <= 7).length
     const mrr = paying.reduce((sum, u) => sum + (u.monthly_amount ?? 0), 0) / 100
-    // Live subscriber count = anyone with a non-canceled Stripe sub (paying,
-    // in trial, or past due). This is the number that should match Stripe's
-    // active-subscription count. Test logins (e.g. playwright-test) have no
-    // profile row, so they never appear here.
+    // Live external subscriber count = real customers with a non-canceled Stripe
+    // sub (paying, in trial, or past due).
     const subscribers = paying.length + trialing + pastDue
-    return { paying: paying.length, trialing, pastDue, neverPaid, new7, mrr, subscribers }
+    return { paying: paying.length, trialing, pastDue, neverPaid, churned, internal, new7, mrr, subscribers }
   }, [users])
 
   const filtered = useMemo(() => users.filter(u => {
@@ -117,6 +141,8 @@ export default function AdminPanel() {
     if (filter === 'paying' && kind !== 'paying') return false
     if (filter === 'trialing' && kind !== 'trialing') return false
     if (filter === 'never_paid' && kind !== 'never_paid') return false
+    if (filter === 'churned' && kind !== 'canceled') return false
+    if (filter === 'internal' && !u.is_internal) return false
     // dormant = has access (paying/trial) but hasn't loaded homeowners
     if (filter === 'dormant' && !((kind === 'paying' || kind === 'trialing') && u.homeowners === 0)) return false
     if (!search) return true
@@ -134,18 +160,21 @@ export default function AdminPanel() {
     { key: 'paying', label: `Paying ${stats.paying}` },
     { key: 'trialing', label: `Trial ${stats.trialing}` },
     { key: 'never_paid', label: `Never paid ${stats.neverPaid}` },
+    { key: 'churned', label: `Churned ${stats.churned}` },
     { key: 'dormant', label: 'Dormant' },
+    { key: 'internal', label: `Internal ${stats.internal}` },
   ]
 
   return (
     <div>
-      {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="matches Stripe" />
-        <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" />
+      {/* Summary — headline numbers are EXTERNAL customers (internal Prowest seats excluded) */}
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-6">
+        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="external only" />
+        <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" hint="external only" />
         <Stat label="Paying" value={String(stats.paying)} accent="text-green-400" />
         <Stat label="On trial" value={String(stats.trialing)} accent="text-sky-400" />
-        <Stat label="New · 7d" value={String(stats.new7)} accent="text-white" />
+        <Stat label="Churned" value={String(stats.churned)} accent="text-zinc-400" />
+        <Stat label="Internal" value={String(stats.internal)} accent="text-zinc-400" hint="Prowest seats" />
       </div>
 
       {message && (
@@ -183,7 +212,7 @@ export default function AdminPanel() {
             {filtered.map(u => {
               const kind = billingKind(u)
               const trialDays = kind === 'trialing' ? daysFromNow(u.trial_end) : null
-              const busy = actionLoading === u.email
+              const busy = actionLoading === u.email || actionLoading === u.id
               return (
                 <div key={u.id} className="px-5 py-4">
                   <div className="flex items-start justify-between gap-4">
@@ -195,15 +224,31 @@ export default function AdminPanel() {
                         <span className={`text-[11px] px-2 py-0.5 rounded-full ${BADGE[kind]}`}>
                           {BADGE_LABEL[kind]}
                         </span>
+                        {u.is_internal && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">
+                            Internal
+                          </span>
+                        )}
+                        {u.orphan && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700">
+                            no account
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-zinc-500 truncate mt-0.5">
                         {[u.pm_name, u.email].filter(Boolean).join(' · ')}
                       </p>
                       <p className="text-xs text-zinc-500 truncate">
-                        {[
-                          u.pm_phone ? `📞 ${u.pm_phone}` : null,
-                          `signed up ${fmtDate(Math.floor(new Date(u.created_at).getTime() / 1000))}`,
-                        ].filter(Boolean).join(' · ')}
+                        {(kind === 'canceled'
+                          ? [
+                              u.pm_phone ? `📞 ${u.pm_phone}` : null,
+                              u.canceled_at ? `cancelled ${fmtDate(u.canceled_at)}` : 'cancelled',
+                            ]
+                          : [
+                              u.pm_phone ? `📞 ${u.pm_phone}` : null,
+                              u.orphan ? null : `signed up ${fmtDate(Math.floor(new Date(u.created_at).getTime() / 1000))}`,
+                            ]
+                        ).filter(Boolean).join(' · ')}
                       </p>
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
@@ -217,7 +262,7 @@ export default function AdminPanel() {
                           ${((u.monthly_amount ?? 0) / 100).toFixed(0)}/mo · renews {fmtDate(u.period_end)}
                         </span>
                       )}
-                      {u.subscription_status === 'active' ? (
+                      {!u.orphan && (u.subscription_status === 'active' ? (
                         <button
                           onClick={() => handleAction(u.email, 'deactivate')}
                           disabled={busy}
@@ -233,17 +278,28 @@ export default function AdminPanel() {
                         >
                           {busy ? '…' : 'Activate'}
                         </button>
+                      ))}
+                      {!u.orphan && (
+                        <button
+                          onClick={() => toggleInternal(u)}
+                          disabled={busy}
+                          className="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors disabled:opacity-40"
+                        >
+                          {busy ? '…' : u.is_internal ? 'Mark external' : 'Mark internal'}
+                        </button>
                       )}
                     </div>
                   </div>
-                  {/* Engagement strip */}
-                  <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-500">
-                    <span className={u.homeowners === 0 ? 'text-amber-500/80' : ''}>
-                      🏠 {u.homeowners} homeowner{u.homeowners === 1 ? '' : 's'}
-                    </span>
-                    <span>📅 {u.bookings} booking{u.bookings === 1 ? '' : 's'}</span>
-                    <span>💬 {u.sms_used}/{u.sms_cap} SMS</span>
-                  </div>
+                  {/* Engagement strip — only meaningful for rows with a live account */}
+                  {!u.orphan && (
+                    <div className="flex items-center gap-4 mt-2 text-[11px] text-zinc-500">
+                      <span className={u.homeowners === 0 ? 'text-amber-500/80' : ''}>
+                        🏠 {u.homeowners} homeowner{u.homeowners === 1 ? '' : 's'}
+                      </span>
+                      <span>📅 {u.bookings} booking{u.bookings === 1 ? '' : 's'}</span>
+                      <span>💬 {u.sms_used}/{u.sms_cap} SMS</span>
+                    </div>
+                  )}
                 </div>
               )
             })}

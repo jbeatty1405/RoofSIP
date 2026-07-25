@@ -54,3 +54,55 @@ export function describePm(pmName?: string | null, companyName?: string | null):
   if (pm && company) return `${pm} (${company})`
   return pm || company || 'Someone'
 }
+
+export type BillingEvent = {
+  /** Normalized: created | updated | canceled | paused | resumed | payment_failed | payment_succeeded */
+  eventType: string
+  /** Stripe evt_… — unique key so a retried webhook delivery dedupes instead of double-logging. */
+  stripeEventId?: string | null
+  customerId?: string | null
+  subscriptionId?: string | null
+  /** Stripe subscription.status at event time (active/trialing/canceled/…). */
+  subStatus?: string | null
+  /** Monthly price for lifecycle events, amount_paid for invoices — cents. */
+  amountCents?: number | null
+  currency?: string | null
+  // Best-effort identity snapshot, captured at event time so churn survives the
+  // profile being wiped later (the exact failure that lost Ryan Orefice).
+  userId?: string | null
+  email?: string | null
+  pmName?: string | null
+  companyName?: string | null
+  raw?: Record<string, unknown> | null
+}
+
+/**
+ * Append a row to the permanent `billing_events` ledger. Never throws — a failed
+ * log must not fail the Stripe webhook (which would make Stripe retry the whole
+ * payment event). Deduped on stripe_event_id so retried deliveries are no-ops.
+ */
+export async function logBillingEvent(supabase: DbClient, e: BillingEvent): Promise<void> {
+  try {
+    await supabase
+      .from('billing_events')
+      .upsert(
+        {
+          event_type: e.eventType,
+          stripe_event_id: e.stripeEventId ?? null,
+          stripe_customer_id: e.customerId ?? null,
+          stripe_subscription_id: e.subscriptionId ?? null,
+          user_id: e.userId ?? null,
+          email: e.email ?? null,
+          pm_name: e.pmName ?? null,
+          company_name: e.companyName ?? null,
+          sub_status: e.subStatus ?? null,
+          amount_cents: e.amountCents ?? null,
+          currency: e.currency ?? 'usd',
+          raw: e.raw ?? null,
+        },
+        { onConflict: 'stripe_event_id', ignoreDuplicates: true },
+      )
+  } catch (err) {
+    console.error('[billing-event] log failed:', err)
+  }
+}

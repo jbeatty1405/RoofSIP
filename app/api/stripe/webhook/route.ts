@@ -1,11 +1,52 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
 import { sendWelcomeEmail, sendTrialEndingEmail } from '@/app/_lib/email'
-import { ADMIN_USER_ID, notifyAdmin, claimOnce, describePm } from '@/app/_lib/admin'
+import { ADMIN_USER_ID, notifyAdmin, claimOnce, describePm, logBillingEvent } from '@/app/_lib/admin'
 import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
+
+// Best-effort identity for the billing ledger + alerts. Resolves the PM behind a
+// subscription/customer at event time, so a later profile deletion can't erase
+// who the event belonged to. Returns nulls (never throws) if no profile matches.
+async function resolveSnapshot(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  ids: { subscriptionId?: string | null; customerId?: string | null },
+) {
+  try {
+    let profile: { id: string; pm_name: string | null; company_name: string | null; stripe_customer_id: string | null } | null = null
+    if (ids.subscriptionId) {
+      profile = (await supabase
+        .from('profiles')
+        .select('id, pm_name, company_name, stripe_customer_id')
+        .eq('stripe_subscription_id', ids.subscriptionId)
+        .maybeSingle()).data
+    }
+    if (!profile && ids.customerId) {
+      profile = (await supabase
+        .from('profiles')
+        .select('id, pm_name, company_name, stripe_customer_id')
+        .eq('stripe_customer_id', ids.customerId)
+        .maybeSingle()).data
+    }
+    let email: string | null = null
+    if (profile) {
+      const { data } = await supabase.auth.admin.getUserById(profile.id)
+      email = data?.user?.email ?? null
+    }
+    return {
+      userId: profile?.id ?? null,
+      email,
+      pmName: profile?.pm_name ?? null,
+      companyName: profile?.company_name ?? null,
+      customerId: ids.customerId ?? profile?.stripe_customer_id ?? null,
+    }
+  } catch (err) {
+    console.error('[webhook] resolveSnapshot failed:', err)
+    return { userId: null, email: null, pmName: null, companyName: null, customerId: ids.customerId ?? null }
+  }
+}
 
 export async function POST(request: NextRequest) {
   const body = await request.text()
@@ -62,6 +103,18 @@ export async function POST(request: NextRequest) {
           pmName: updatedProfile?.pm_name ?? undefined,
         }).catch(err => console.error('[webhook] welcome email failed:', err))
 
+        await logBillingEvent(supabase, {
+          eventType: 'created',
+          stripeEventId: event.id,
+          customerId,
+          subscriptionId: obj.subscription as string,
+          subStatus: 'trialing',
+          userId,
+          email: authUser!.email!,
+          pmName: updatedProfile?.pm_name,
+          companyName: updatedProfile?.company_name,
+        })
+
         // Owner alert: they handed over a card, so this is the real signup moment.
         // Skipped when the admin subscribes himself (no self-alerts).
         if (userId !== ADMIN_USER_ID) {
@@ -111,13 +164,47 @@ export async function POST(request: NextRequest) {
       .from('profiles')
       .update({ subscription_status: isActive ? 'active' : 'inactive' })
       .eq('stripe_subscription_id', obj.id)
+
+    const snap = await resolveSnapshot(supabase, { subscriptionId: obj.id, customerId: obj.customer })
+    await logBillingEvent(supabase, {
+      eventType: 'updated',
+      stripeEventId: event.id,
+      subscriptionId: obj.id,
+      subStatus: obj.status,
+      amountCents: obj.items?.data?.[0]?.price?.unit_amount ?? null,
+      ...snap,
+    })
   }
 
   if (event.type === 'customer.subscription.deleted' || event.type === 'customer.subscription.paused') {
+    // Snapshot BEFORE we touch the profile — the PM (and later the whole row) may
+    // vanish, and this ledger row is the only permanent record of the churn.
+    const snap = await resolveSnapshot(supabase, { subscriptionId: obj.id, customerId: obj.customer })
+
     await supabase
       .from('profiles')
       .update({ subscription_status: 'inactive' })
       .eq('stripe_subscription_id', obj.id)
+
+    const isCancel = event.type === 'customer.subscription.deleted'
+    await logBillingEvent(supabase, {
+      eventType: isCancel ? 'canceled' : 'paused',
+      stripeEventId: event.id,
+      subscriptionId: obj.id,
+      subStatus: obj.status,
+      amountCents: obj.items?.data?.[0]?.price?.unit_amount ?? null,
+      ...snap,
+    })
+
+    // Owner alert: a subscriber left. Never self-alert on the admin's own sub.
+    if (isCancel && snap.userId !== ADMIN_USER_ID) {
+      const who = describePm(snap.pmName, snap.companyName)
+      await notifyAdmin(supabase, {
+        title: '❌ Subscriber cancelled',
+        message: `${who} cancelled their RoofSIP subscription.`,
+        data: { event: 'canceled', userId: snap.userId, subId: obj.id, email: snap.email },
+      })
+    }
   }
 
   if (event.type === 'customer.subscription.resumed' || event.type === 'invoice.payment_succeeded') {
@@ -127,6 +214,19 @@ export async function POST(request: NextRequest) {
         .from('profiles')
         .update({ subscription_status: 'active' })
         .eq('stripe_subscription_id', subId)
+    }
+
+    if (subId) {
+      const isInvoice = event.type === 'invoice.payment_succeeded'
+      const snap = await resolveSnapshot(supabase, { subscriptionId: subId, customerId: obj.customer })
+      await logBillingEvent(supabase, {
+        eventType: isInvoice ? 'payment_succeeded' : 'resumed',
+        stripeEventId: event.id,
+        subscriptionId: subId,
+        subStatus: isInvoice ? 'active' : obj.status,
+        amountCents: isInvoice ? (obj.amount_paid ?? null) : (obj.items?.data?.[0]?.price?.unit_amount ?? null),
+        ...snap,
+      })
     }
 
     // Owner alert: real money actually moved (trial invoices are $0, so they're
@@ -155,6 +255,31 @@ export async function POST(request: NextRequest) {
           })
         }
       }
+    }
+  }
+
+  if (event.type === 'invoice.payment_failed') {
+    const subId = (obj.subscription ?? null) as string | null
+    const snap = await resolveSnapshot(supabase, { subscriptionId: subId, customerId: obj.customer })
+    await logBillingEvent(supabase, {
+      eventType: 'payment_failed',
+      stripeEventId: event.id,
+      subscriptionId: subId,
+      subStatus: 'past_due',
+      amountCents: obj.amount_due ?? null,
+      ...snap,
+    })
+
+    // Owner alert: money at risk. Not deduped — Stripe only fires this on genuine
+    // retry attempts, and each failed attempt is worth knowing about.
+    if (snap.userId !== ADMIN_USER_ID) {
+      const who = describePm(snap.pmName, snap.companyName)
+      const amount = ((obj.amount_due ?? 0) / 100).toFixed(2)
+      await notifyAdmin(supabase, {
+        title: '⚠️ Payment failed',
+        message: `${who}'s payment of $${amount} failed. At risk of churning.`,
+        data: { event: 'payment_failed', userId: snap.userId, subId, email: snap.email },
+      })
     }
   }
 

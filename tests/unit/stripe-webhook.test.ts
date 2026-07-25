@@ -16,6 +16,9 @@ const mockUpdate = vi.fn()
 const mockEq = vi.fn()
 const mockSelect = vi.fn()
 const mockSingle = vi.fn()
+const mockMaybeSingle = vi.fn()
+const mockUpsert = vi.fn()
+const mockInsert = vi.fn()
 const mockGetUserById = vi.fn()
 
 vi.mock('@/app/_lib/supabase/server', () => ({
@@ -35,12 +38,16 @@ beforeEach(() => {
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test'
 
   mockSingle.mockResolvedValue({ data: null, error: null })
-  mockSelect.mockReturnValue({ eq: mockEq, single: mockSingle })
-  // .eq() can be followed by .select()/.single()/.eq() so both the
-  // select…eq…single and update…eq…select…single chains resolve.
-  mockEq.mockReturnValue({ select: mockSelect, single: mockSingle, eq: mockEq })
+  mockMaybeSingle.mockResolvedValue({ data: null, error: null })
+  mockUpsert.mockResolvedValue({ error: null })
+  mockInsert.mockResolvedValue({ error: null })
+  mockSelect.mockReturnValue({ eq: mockEq, single: mockSingle, maybeSingle: mockMaybeSingle })
+  // .eq() can be followed by .select()/.single()/.maybeSingle()/.eq() so the
+  // select…eq…single, update…eq…select…single, and select…eq…maybeSingle chains
+  // (the last used by the billing ledger + churn snapshot) all resolve.
+  mockEq.mockReturnValue({ select: mockSelect, single: mockSingle, maybeSingle: mockMaybeSingle, eq: mockEq })
   mockUpdate.mockReturnValue({ eq: mockEq })
-  mockFrom.mockReturnValue({ select: mockSelect, update: mockUpdate })
+  mockFrom.mockReturnValue({ select: mockSelect, update: mockUpdate, upsert: mockUpsert, insert: mockInsert })
   mockGetUserById.mockResolvedValue({ data: { user: { email: 'test@example.com' } } })
 })
 
@@ -94,6 +101,41 @@ describe('POST /api/stripe/webhook (RoofSIP)', () => {
     const res = await POST(makeRequest('{}'))
     expect(res.status).toBe(200)
     expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive' })
+  })
+
+  it('handles customer.subscription.deleted — writes a canceled ledger row', async () => {
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_cancel',
+      type: 'customer.subscription.deleted',
+      data: { object: { id: 'sub_dead', status: 'canceled', customer: 'cus_dead' } },
+    })
+
+    const res = await POST(makeRequest('{}'))
+    expect(res.status).toBe(200)
+    expect(mockFrom).toHaveBeenCalledWith('billing_events')
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_type: 'canceled',
+        stripe_event_id: 'evt_cancel',
+        stripe_subscription_id: 'sub_dead',
+      }),
+      expect.objectContaining({ onConflict: 'stripe_event_id' }),
+    )
+  })
+
+  it('handles invoice.payment_failed — writes a payment_failed ledger row', async () => {
+    mockConstructEvent.mockReturnValue({
+      id: 'evt_fail',
+      type: 'invoice.payment_failed',
+      data: { object: { subscription: 'sub_x', customer: 'cus_x', amount_due: 2000 } },
+    })
+
+    const res = await POST(makeRequest('{}'))
+    expect(res.status).toBe(200)
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ event_type: 'payment_failed', amount_cents: 2000 }),
+      expect.anything(),
+    )
   })
 
   it('handles customer.subscription.updated — active status', async () => {

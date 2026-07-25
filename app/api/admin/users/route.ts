@@ -21,10 +21,14 @@ const STATUS_RANK: Record<string, number> = {
 }
 
 type StripeInfo = {
+  subId: string
   status: string
   amount: number // monthly cents
   trialEnd: number | null // unix seconds
   periodEnd: number | null // unix seconds
+  canceledAt: number | null // unix seconds
+  customerEmail: string | null
+  customerName: string | null
 }
 
 export async function GET() {
@@ -47,7 +51,7 @@ export async function GET() {
   const [{ data: profiles }, authList, homeownersRes, bookingsRes] = await Promise.all([
     service
       .from('profiles')
-      .select('id, pm_name, company_name, pm_phone, pm_email, subscription_status, stripe_customer_id, stripe_subscription_id, sms_count_this_month, sms_cap, created_at')
+      .select('id, pm_name, company_name, pm_phone, pm_email, subscription_status, stripe_customer_id, stripe_subscription_id, sms_count_this_month, sms_cap, is_internal, created_at')
       .order('created_at', { ascending: false }),
     service.auth.admin.listUsers(),
     service.from('homeowners').select('roofer_id, is_test'),
@@ -73,12 +77,16 @@ export async function GET() {
     let startingAfter: string | undefined
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const page = await stripe.subscriptions.list({ status: 'all', limit: 100, starting_after: startingAfter })
+      // Expand the customer so churned subscribers whose profile was deleted
+      // (e.g. Ryan Orefice) still carry a name/email to display.
+      const page = await stripe.subscriptions.list({ status: 'all', limit: 100, starting_after: startingAfter, expand: ['data.customer'] })
       for (const s of page.data) {
+        const customerObj = typeof s.customer === 'string' ? null : s.customer
         const customerId = typeof s.customer === 'string' ? s.customer : s.customer?.id
         if (!customerId) continue
         const item = s.items.data[0]
         const info: StripeInfo = {
+          subId: s.id,
           status: s.status,
           amount: item?.price?.unit_amount ?? 0,
           trialEnd: s.trial_end ?? null,
@@ -86,6 +94,9 @@ export async function GET() {
           periodEnd: (s as { current_period_end?: number }).current_period_end
             ?? (item as { current_period_end?: number } | undefined)?.current_period_end
             ?? null,
+          canceledAt: s.canceled_at ?? s.ended_at ?? null,
+          customerEmail: customerObj && !customerObj.deleted ? (customerObj.email ?? null) : null,
+          customerName: customerObj && !customerObj.deleted ? (customerObj.name ?? null) : null,
         }
         const existing = stripeByCustomer[customerId]
         if (!existing || (STATUS_RANK[info.status] ?? 0) >= (STATUS_RANK[existing.status] ?? 0)) {
@@ -109,6 +120,8 @@ export async function GET() {
       pm_phone: p.pm_phone,
       pm_email: p.pm_email,
       subscription_status: p.subscription_status,
+      is_internal: p.is_internal ?? false,
+      orphan: false,
       created_at: p.created_at,
       sms_used: p.sms_count_this_month ?? 0,
       sms_cap: p.sms_cap ?? 0,
@@ -118,8 +131,38 @@ export async function GET() {
       monthly_amount: s?.amount ?? null,
       trial_end: s?.trialEnd ?? null,
       period_end: s?.periodEnd ?? null,
+      canceled_at: s?.canceledAt ?? null,
     }
   })
+
+  // Orphan rows: Stripe customers with a subscription but no matching profile —
+  // churned users whose account/profile was deleted (how Ryan Orefice vanished).
+  // Without these, cancellations by deleted accounts are invisible in the UI.
+  const knownCustomerIds = new Set((profiles ?? []).map(p => p.stripe_customer_id).filter(Boolean))
+  for (const [customerId, s] of Object.entries(stripeByCustomer)) {
+    if (knownCustomerIds.has(customerId)) continue
+    result.push({
+      id: `stripe:${customerId}`,
+      email: s.customerEmail ?? '—',
+      pm_name: s.customerName ?? null,
+      company_name: null,
+      pm_phone: null,
+      pm_email: s.customerEmail ?? null,
+      subscription_status: null, // no profile
+      is_internal: false,
+      orphan: true,
+      created_at: s.canceledAt ? new Date(s.canceledAt * 1000).toISOString() : new Date(0).toISOString(),
+      sms_used: 0,
+      sms_cap: 0,
+      homeowners: 0,
+      bookings: 0,
+      stripe_status: s.status,
+      monthly_amount: s.amount,
+      trial_end: s.trialEnd,
+      period_end: s.periodEnd,
+      canceled_at: s.canceledAt,
+    })
+  }
 
   return NextResponse.json(result)
 }
