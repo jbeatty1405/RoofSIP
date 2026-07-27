@@ -119,9 +119,11 @@ export default function AdminPanel() {
   }
 
   const stats = useMemo(() => {
-    // External = real customers. Internal Prowest seats are excluded from the
-    // headline subscriber/MRR/paying numbers so they reflect the actual business.
-    const ext = users.filter(u => !u.is_internal)
+    // Every paying customer counts, including Prowest teammates — they pay $20/mo
+    // like anyone else. Only truly comped accounts (Justin + Sam) have no Stripe
+    // sub, so billingKind drops them into never_paid, not paying. `is_internal` is
+    // a Prowest-employee tag for filtering the list, NOT a paying/non-paying signal.
+    const ext = users
     const paying = ext.filter(u => billingKind(u) === 'paying')
     const trialing = ext.filter(u => billingKind(u) === 'trialing').length
     const pastDue = ext.filter(u => billingKind(u) === 'past_due').length
@@ -167,10 +169,10 @@ export default function AdminPanel() {
 
   return (
     <div>
-      {/* Summary — headline numbers are EXTERNAL customers (internal Prowest seats excluded) */}
+      {/* Summary — headline numbers count ALL paying customers (Prowest teammates pay too) */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-6">
-        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="external only" />
-        <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" hint="external only" />
+        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="all paying" />
+        <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" hint="all paying" />
         <Stat label="Paying" value={String(stats.paying)} accent="text-green-400" />
         <Stat label="On trial" value={String(stats.trialing)} accent="text-sky-400" />
         <Stat label="Churned" value={String(stats.churned)} accent="text-zinc-400" />
