@@ -50,7 +50,7 @@ export default function HaileyBanner({ recentActivity }: { recentActivity?: stri
         <div className="flex items-center gap-2">
           <div className="w-1 h-1 rounded-full bg-zinc-700" />
           <p className="text-xs text-zinc-500">
-            {recentActivity ?? 'Monitoring storm activity across your markets.'}
+            {recentActivity ?? 'Monitoring storm activity across your roofs.'}
           </p>
         </div>
       </div>

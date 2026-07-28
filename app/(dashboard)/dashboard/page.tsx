@@ -1,5 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import HaileyBanner from './HaileyBanner'
+import GettingStarted from './GettingStarted'
 import AppStoreBadge from '@/app/_components/AppStoreBadge'
 import Link from 'next/link'
 
@@ -58,6 +59,8 @@ export default async function DashboardHome() {
           <span className="text-xs text-zinc-500">{lastAlertLabel}</span>
         </div>
       </div>
+
+      <GettingStarted homeownerCount={homeownerCount ?? 0} optedInCount={optedInCount ?? 0} />
 
       <HaileyBanner recentActivity={lastAlertLabel} />
 
