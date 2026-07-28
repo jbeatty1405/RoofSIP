@@ -3,6 +3,7 @@ import { getTwilioClient } from '@/app/_lib/twilio'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { preClassifyIntent } from '@/app/_lib/ai-sms'
+import { phoneMatchCandidates } from '@/app/_lib/phone'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { APP_URL } from '@/app/_lib/url'
 import { NextRequest, NextResponse } from 'next/server'
@@ -38,6 +39,8 @@ export async function POST(request: NextRequest) {
   const toPhone = payload.To
   const messageBody = (payload.Body ?? '').trim()
   const messageLower = messageBody.toLowerCase()
+  // Match a homeowner whether their phone was stored E.164 or bare 10-digit.
+  const phoneCandidates = phoneMatchCandidates(fromPhone)
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, ''),
@@ -58,7 +61,7 @@ export async function POST(request: NextRequest) {
       const { data } = await supabase
         .from('homeowners')
         .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
-        .eq('phone', fromPhone)
+        .in('phone', phoneCandidates)
         .eq('roofer_id', profile.id)
         .maybeSingle()
       homeowner = data
@@ -68,7 +71,7 @@ export async function POST(request: NextRequest) {
     const { data } = await supabase
       .from('homeowners')
       .select('*, profiles(id, pm_name, pm_phone, pm_email, message_style)')
-      .eq('phone', fromPhone)
+      .in('phone', phoneCandidates)
       .limit(1)
       .maybeSingle()
     homeowner = data
@@ -118,12 +121,22 @@ export async function POST(request: NextRequest) {
       const confirmation = `You're all set! ${pmFirst} will reach out if we catch any storm activity near your home. Msg frequency varies, msg & data rates may apply. Reply HELP for help, STOP to cancel.`
       await sendSms(twilio, fromPhone, confirmation)
       await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: confirmation, direction: 'outbound', status: 'sent', message_type: 'opt_in_confirmation' })
+      // Hype the PM: their homeowner just opted in and is now on watch. Pure win
+      // moment (type is NOT hot_lead, so it never lands in the call list), with a
+      // nudge to keep adding homes.
+      await notifyRoofer(supabase, {
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        type: 'homeowner_confirmed',
+        pushTitle: '✅ New roof on watch',
+        message: `${homeowner.name} is confirmed and being tracked. Every home you add is another paycheck sitting there waiting on the next storm. Who else you got?`,
+      })
       return new NextResponse('', { status: 200 })
     }
 
     let reply: string
     if (isOptOut) {
-      await supabase.from('homeowners').update({ tcpa_consent: false }).eq('phone', fromPhone) // STOP opts out every record with this number, across all roofers (TCPA)
+      await supabase.from('homeowners').update({ tcpa_consent: false }).in('phone', phoneCandidates) // STOP opts out every record with this number, across all roofers (TCPA)
       reply = `Got it! We won't reach out again. Take care.`
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
@@ -137,7 +150,7 @@ export async function POST(request: NextRequest) {
 
   // STOP always wins — TCPA compliance, process regardless of quiet hours
   if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
-    await supabase.from('homeowners').update({ tcpa_consent: false }).eq('phone', fromPhone) // STOP opts out every record with this number, across all roofers (TCPA)
+    await supabase.from('homeowners').update({ tcpa_consent: false }).in('phone', phoneCandidates) // STOP opts out every record with this number, across all roofers (TCPA)
     return new NextResponse('', { status: 200 })
   }
 
