@@ -4,6 +4,7 @@ import Link from 'next/link'
 import DeleteHomeownerButton from './DeleteHomeownerButton'
 import NotesEditor from './NotesEditor'
 import CompleteBookingButton from './CompleteBookingButton'
+import SchedulingToggle from './SchedulingToggle'
 
 export default async function HomeownerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -12,7 +13,7 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
 
   const { data: homeowner } = await supabase
     .from('homeowners')
-    .select('*, markets(name)')
+    .select('*')
     .eq('id', id)
     .eq('roofer_id', user!.id)
     .single()
@@ -71,10 +72,6 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Market</dt>
-            <dd className="text-sm text-zinc-300 mt-1">{(homeowner as any).markets?.name ?? <span className="text-zinc-500">None</span>}</dd>
-          </div>
-          <div>
             <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Consent</dt>
             <dd className="text-sm text-zinc-300 mt-1">
               {homeowner.tcpa_consent ? (
@@ -90,6 +87,15 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
           </div>
         </dl>
       </div>
+
+      {/* Scheduling — only for consent leads (monitor-only never gets texted) */}
+      {!homeowner.monitor_only && (
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-4">
+          <h2 className="font-semibold text-zinc-200 mb-1">Scheduling</h2>
+          <p className="text-xs text-zinc-500 mb-3">What happens when a storm hits their house.</p>
+          <SchedulingToggle homeownerId={homeowner.id} initial={homeowner.auto_schedule !== false} />
+        </div>
+      )}
 
       {/* Notes */}
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-4">
