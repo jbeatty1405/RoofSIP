@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   if ('error' in validation) {
     return NextResponse.json({ error: validation.error }, { status: 400 })
   }
-  const { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId, monitorOnly } = validation
+  const { name, address, zipCode, photoUrls, phone, tcpaConsent, autoSchedule, monitorOnly } = validation
 
   const recent = await homeownerCreatesLast24h(supabase, user.id)
   if (recent >= HOMEOWNER_DAILY_LIMIT) {
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       phone,
       address,
       zip_code: zipCode,
-      market_id: marketId ?? null,
+      auto_schedule: autoSchedule,
       monitor_only: monitorOnly,
       tcpa_consent: monitorOnly ? false : tcpaConsent,
       tcpa_consent_at: (!monitorOnly && tcpaConsent) ? new Date().toISOString() : null,
@@ -128,7 +128,7 @@ type ValidHomeowner = {
   photoUrls: string[]
   phone: string | null
   tcpaConsent: boolean
-  marketId: string | null
+  autoSchedule: boolean
   monitorOnly: boolean
 }
 
@@ -138,7 +138,9 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
   const zipCode = typeof body.zipCode === 'string' ? body.zipCode.trim() : ''
   const rawPhone = typeof body.phone === 'string' ? body.phone : ''
   const tcpaConsent = body.tcpaConsent === true
-  const marketId = typeof body.marketId === 'string' && body.marketId ? body.marketId : null
+  // Per-homeowner scheduling choice (consent leads only). Defaults to auto-schedule
+  // unless the PM explicitly picks the out-of-market lead option (autoSchedule=false).
+  const autoSchedule = body.autoSchedule !== false
   const monitorOnly = body.monitorOnly === true
 
   if (!name) return { error: 'Name required' }
@@ -169,7 +171,7 @@ function validateHomeowner(body: Record<string, unknown>): ValidHomeowner | { er
     photoUrls.push(u)
   }
 
-  return { name, address, zipCode, photoUrls, phone, tcpaConsent, marketId, monitorOnly }
+  return { name, address, zipCode, photoUrls, phone, tcpaConsent, autoSchedule, monitorOnly }
 }
 
 function normalizePhone(raw: string): string {

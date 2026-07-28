@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
-import { getTwilioClient, buildWeatherSms, buildIntroSms, buildNoTimeWeatherSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
+import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
 import { getMarketById, getNextAvailableSlot, formatSlot, DEFAULT_MARKET } from '@/app/_lib/markets'
@@ -475,15 +475,17 @@ export async function POST(request: NextRequest) {
 
     const firstName = homeowner.name.split(' ')[0]
     const pmName = profile.pm_name ?? 'Your inspector'
-    const market = await getMarketById(supabase, homeowner.market_id)
-    // Homeowners with no market assigned still get the next available time from
-    // standard hours, instead of dead-ending on a "no schedule set" no-time text.
-    const effectiveMarket = market ?? DEFAULT_MARKET
+    // Scheduling behavior is a per-homeowner choice made at add time:
+    // auto_schedule = book the next open slot and text a time; false = out-of-market
+    // lead (text that the PM will call + hand the PM a call task, no slot booked).
+    // Market (or DEFAULT_MARKET) now survives only as the working-hours source.
+    const effectiveMarket = (await getMarketById(supabase, homeowner.market_id)) ?? DEFAULT_MARKET
+    const autoSchedule = homeowner.auto_schedule !== false
 
     let message: string
     let proposedSlot: Date | null = null
 
-    if (effectiveMarket.auto_schedule) {
+    if (autoSchedule) {
       // Reserve a unique slot BEFORE sending. The partial unique index on
       // (roofer_id, proposed_slot) makes a racing reservation fail with 23505;
       // on conflict we recompute the next open slot and retry — so two homeowners
@@ -534,14 +536,16 @@ export async function POST(request: NextRequest) {
           : buildWeatherSms(pmName, homeowner.name, alert.type, proposedTime, profile.company_name ?? undefined)
       }
     } else {
-      // Reached only when a real market has auto-scheduling turned OFF (the PM's
-      // choice) — a no-market homeowner now falls back to DEFAULT_MARKET above.
-      message = buildNoTimeWeatherSms(pmName, homeowner.name, profile.company_name ?? undefined)
+      // Out-of-market lead: the PM chose not to auto-book this homeowner. We still
+      // text them (they consented) to say their contractor will call, and drop a
+      // hot lead into the PM's call list. No slot reserved, no booking row created.
+      message = buildOutOfMarketSms(pmName, homeowner.name, profile.company_name ?? undefined)
       await notifyRoofer(supabase, {
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,
+        type: 'hot_lead',
         pushTitle: '⛈️ Storm lead',
-        message: `Storm alert sent to ${homeowner.name} at ${homeowner.address}. Auto-schedule is off for ${effectiveMarket.name} — reach out to book their free inspection. Call: ${homeowner.phone}`,
+        message: `Storm hit ${homeowner.name} at ${homeowner.address}. They got a text that you'll call to schedule — reach out to book their free inspection. Call: ${homeowner.phone}`,
       })
     }
 
@@ -566,15 +570,8 @@ export async function POST(request: NextRequest) {
         noaa_alert_id: alertId,
       })
 
-      // Timed offers are already reserved above. Only the no-time case needs a row here.
-      if (!proposedSlot && market) {
-        await supabase.from('pending_bookings').upsert({
-          homeowner_id: homeowner.id,
-          roofer_id: homeowner.roofer_id,
-          status: 'awaiting_homeowner',
-        }, { onConflict: 'homeowner_id' })
-      }
-
+      // Timed offers reserve their slot above. Out-of-market leads create no
+      // booking row — they live as a hot lead in the PM's call list instead.
       stormAlertedThisRun.add(homeowner.id)
       sentLast48hPhones.add(homeowner.phone)
       await bumpSmsCount(supabase, profile.id, profile.sms_cap ?? 1000, profile.company_name ?? profile.pm_name ?? 'Account')

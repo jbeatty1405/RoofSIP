@@ -94,6 +94,17 @@ export function buildNoTimeWeatherSms(pmName: string, homeownerName: string, com
   return `Hey ${firstName}, ${intro} here. We caught some weather near your home — ${pmFirst} will be in touch shortly to get your roof checked out.`
 }
 
+// Out-of-market lead: we don't auto-book a slot. Tell the homeowner their
+// contractor will call to schedule, and (in the storm run) hand the PM a call
+// lead. Requires consent like any other text — no-consent leads stay monitor-only.
+export function buildOutOfMarketSms(pmName: string, homeownerName: string, companyName?: string): string {
+  const firstName = homeownerName.split(' ')[0]
+  const pmFirst = pmName.split(' ')[0]
+  const cleaned = companyName ? cleanCompanyName(companyName) : ''
+  const intro = cleaned ? `Hailey with ${cleaned}` : `Hailey with ${pmFirst}'s roofing team`
+  return `Hey ${firstName}, it's ${intro}. We picked up some weather near your place today, so ${pmFirst} is gonna give you a call to get an inspection scheduled. Talk soon.`
+}
+
 export function buildBookingConfirmationSms(pmName: string, homeownerName: string, dateStr: string): string {
   const firstName = homeownerName.split(' ')[0]
   return `You're all set, ${firstName}! ${pmName} will stop by on ${dateStr} for your free roof inspection. See you then. Reply STOP to cancel.`

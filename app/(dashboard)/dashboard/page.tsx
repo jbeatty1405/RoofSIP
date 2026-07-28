@@ -11,7 +11,6 @@ export default async function DashboardHome() {
     { data: profile },
     { count: homeownerCount },
     { count: optedInCount },
-    { count: marketsCount },
     { data: confirmedBookings },
     { data: callsNeeded },
     { count: callsTotal },
@@ -20,7 +19,6 @@ export default async function DashboardHome() {
     supabase.from('profiles').select('pm_name, company_name, stripe_customer_id, subscription_status').eq('id', user!.id).single(),
     supabase.from('homeowners').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id),
     supabase.from('homeowners').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).eq('tcpa_consent', true),
-    supabase.from('markets').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id),
     supabase.from('pending_bookings').select('id, proposed_slot, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('status', 'confirmed').gt('proposed_slot', new Date().toISOString()).order('proposed_slot', { ascending: true }).limit(10),
     // "Calls needed" is an allowlist, not "everything that isn't a hot lead" —
     // otherwise every new notification type silently lands in the call list.
@@ -195,17 +193,11 @@ export default async function DashboardHome() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Link href="/homeowners" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-sky-800 transition-all group">
           <p className="text-xs text-zinc-500 mb-2">Homeowners</p>
           <p className="text-3xl font-bold text-white">{homeownerCount ?? 0}</p>
           <p className="text-xs text-zinc-600 mt-1">{optedInCount ?? 0} opted in</p>
-        </Link>
-
-        <Link href="/markets" className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 hover:border-sky-800 transition-all group">
-          <p className="text-xs text-zinc-500 mb-2">Markets</p>
-          <p className="text-3xl font-bold text-white">{marketsCount ?? 0}</p>
-          <p className="text-xs text-zinc-600 mt-1">{marketsCount ? 'active' : 'none set up'}</p>
         </Link>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">

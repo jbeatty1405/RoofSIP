@@ -2,7 +2,7 @@
 
 import { createClient } from '@/app/_lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 
 type AddressSuggestion = { address: string; zipCode: string }
@@ -10,8 +10,7 @@ type AddressSuggestion = { address: string; zipCode: string }
 export default function NewHomeownerPage() {
   const router = useRouter()
   const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
-  const [marketId, setMarketId] = useState('')
-  const [markets, setMarkets] = useState<{ id: string; name: string }[]>([])
+  const [autoSchedule, setAutoSchedule] = useState(true)
   const [monitorOnly, setMonitorOnly] = useState<boolean | null>(null)
   const [tcpaConsent, setTcpaConsent] = useState(false)
   const [photos, setPhotos] = useState<File[]>([])
@@ -23,17 +22,6 @@ export default function NewHomeownerPage() {
   const [activeSuggestion, setActiveSuggestion] = useState(-1)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const addressRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    async function loadMarkets() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase.from('markets').select('id, name').eq('roofer_id', user.id).order('name')
-      setMarkets(data ?? [])
-    }
-    loadMarkets()
-  }, [])
 
   function set(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
@@ -111,7 +99,7 @@ export default function NewHomeownerPage() {
     const res = await fetch('/api/homeowners', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, photoUrls, tcpaConsent: monitorOnly ? false : tcpaConsent, monitorOnly: monitorOnly === true, marketId: marketId || null }),
+      body: JSON.stringify({ ...form, photoUrls, tcpaConsent: monitorOnly ? false : tcpaConsent, monitorOnly: monitorOnly === true, autoSchedule: monitorOnly ? true : autoSchedule }),
     })
 
     const data = await res.json()
@@ -228,13 +216,47 @@ export default function NewHomeownerPage() {
           <input id="ho-zip" type="text" value={form.zipCode} onChange={e => set('zipCode', e.target.value)} required maxLength={5} pattern="[0-9]{5}" placeholder="85701" className={inputClass} />
         </div>
 
-        <div>
-          <label htmlFor="ho-market" className="block text-sm font-medium text-zinc-300 mb-1.5">Market</label>
-          <select id="ho-market" value={marketId} onChange={e => setMarketId(e.target.value)} className={inputClass}>
-            <option value="">No market</option>
-            {markets.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </div>
+        {/* Scheduling behavior — only meaningful when we can text them (consent). */}
+        {monitorOnly === false && (
+          <div>
+            <p className="text-sm font-medium text-zinc-300 mb-2">When a storm hits their house</p>
+            <div className="flex flex-col gap-2">
+
+              <label className={`flex gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${autoSchedule ? 'border-sky-500/50 bg-sky-500/5' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                <input
+                  type="radio"
+                  name="schedule-mode"
+                  checked={autoSchedule}
+                  onChange={() => setAutoSchedule(true)}
+                  className="mt-0.5 accent-sky-500 shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-200">Auto schedule</p>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                    Hailey texts them an inspection time from your calendar and books it automatically when they reply YES.
+                  </p>
+                </div>
+              </label>
+
+              <label className={`flex gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${!autoSchedule ? 'border-sky-500/50 bg-sky-500/5' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                <input
+                  type="radio"
+                  name="schedule-mode"
+                  checked={!autoSchedule}
+                  onChange={() => setAutoSchedule(false)}
+                  className="mt-0.5 accent-sky-500 shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-zinc-200">Generate PM call</p>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                    Hailey texts them that you'll call to schedule, and drops them into your call list as a lead. No time is booked automatically.
+                  </p>
+                </div>
+              </label>
+
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-2">Roof photos</label>
