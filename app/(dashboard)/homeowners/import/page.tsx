@@ -35,6 +35,7 @@ export default function ImportPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [result, setResult] = useState<{ inserted: number; skippedInvalid: number; skippedDupes: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const imageRef = useRef<HTMLInputElement>(null)
 
   // Admin-only: import on behalf of another roofer.
   const [isAdmin, setIsAdmin] = useState(false)
@@ -113,6 +114,62 @@ export default function ImportPage() {
     }
   }
 
+  // Downscale + re-encode to JPEG in the browser. Normalizes HEIC (Safari/iOS
+  // decode it into the <img>), shrinks huge phone photos, and keeps the upload
+  // small. Returns bare base64 (no data: prefix).
+  async function fileToJpegBase64(file: File, maxEdge = 1600, quality = 0.9): Promise<string> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(fr.result as string)
+      fr.onerror = () => reject(new Error('read failed'))
+      fr.readAsDataURL(file)
+    })
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const im = new Image()
+      im.onload = () => resolve(im)
+      im.onerror = () => reject(new Error('decode failed'))
+      im.src = dataUrl
+    })
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('no canvas')
+    ctx.drawImage(img, 0, 0, w, h)
+    return canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? ''
+  }
+
+  async function onImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBusy(true); setError('')
+    try {
+      const image = await fileToJpegBase64(file)
+      if (!image) { setError('Could not read that image. Try a screenshot or a JPG/PNG.'); return }
+      const res = await fetch('/api/homeowners/import/parse-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image, mediaType: 'image/jpeg' }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Could not read that image.'); return }
+      const parsed: Row[] = (data.rows ?? []).map((r: any) => ({
+        name: r.row.name ?? '', address: r.row.address ?? '', zip: r.row.zip ?? '', phone: r.row.phone ?? '',
+      }))
+      if (parsed.length === 0) { setError('No homeowners found in that image. Try a clearer photo or a screenshot.'); return }
+      setRows(parsed)
+      setStage('review')
+    } catch {
+      setError('Could not read that image. On a computer, try a screenshot or a JPG/PNG.')
+    } finally {
+      setBusy(false)
+      if (imageRef.current) imageRef.current.value = ''
+    }
+  }
+
   async function onPaste() {
     if (!pasted.trim()) { setError('Paste your list first.'); return }
     setBusy(true); setError('')
@@ -160,7 +217,8 @@ export default function ImportPage() {
         <Link href="/homeowners" className="text-sm text-zinc-500 hover:text-zinc-300">← Homeowners</Link>
         <h1 className="text-2xl font-bold text-white mt-2">Import your list</h1>
         <p className="text-sm text-zinc-500 mt-1">
-          Drop in a spreadsheet or paste any list of homeowners. Everything you import is added as{' '}
+          Spreadsheet, screenshot, or a photo of your handwritten notepad — drop in whatever you've got and SIP sorts
+          out who's who. Everything you import is added as{' '}
           <span className="text-amber-400 font-medium">monitor-only</span> — SIP watches every address for storms and
           flags the hits as Hot Leads, but it never texts them. No opt-in texts go out.
         </p>
@@ -196,6 +254,23 @@ export default function ImportPage() {
               type="file"
               accept=".xlsx,.xls,.csv,.txt,text/csv"
               onChange={onFile}
+              disabled={busy}
+              className="block w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-500 file:text-white hover:file:bg-sky-600 file:cursor-pointer disabled:opacity-50"
+            />
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-zinc-600">
+            <div className="h-px bg-zinc-800 flex-1" /> OR <div className="h-px bg-zinc-800 flex-1" />
+          </div>
+
+          <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-6">
+            <h2 className="text-sm font-semibold text-zinc-200 mb-1">Snap a photo or screenshot</h2>
+            <p className="text-xs text-zinc-500 mb-4">A picture of your handwritten notepad, or a screenshot of a spreadsheet, text thread, or CRM. We read the names, addresses, and numbers right off it.</p>
+            <input
+              ref={imageRef}
+              type="file"
+              accept="image/*"
+              onChange={onImage}
               disabled={busy}
               className="block w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-500 file:text-white hover:file:bg-sky-600 file:cursor-pointer disabled:opacity-50"
             />
