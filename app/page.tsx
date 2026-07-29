@@ -81,7 +81,7 @@ const STEPS = [
   {
     n: '01',
     title: 'Add your homeowners',
-    desc: 'Add people as you go — from your notepad, past jobs, or door-to-door. A name and phone number is all you need.',
+    desc: 'Add people as you go, from your notepad, past jobs, or door-to-door. A name and phone number is all you need.',
   },
   {
     n: '02',

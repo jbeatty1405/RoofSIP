@@ -20,7 +20,7 @@ export default function GettingStarted({ homeownerCount, optedInCount }: { homeo
           done={loadedList}
           n={1}
           title="Load your notepad"
-          body="Import every past customer and lead you've got — a spreadsheet, a screenshot, even a photo of your handwritten notepad. We read it and sort out who's who. They get watched, and the moment a storm hits one it comes back to you as a lead to call. Instant value from people you already know."
+          body="Every past customer and every house that wasn't damaged enough to file yet. A spreadsheet, a screenshot, even a photo of your handwritten notepad. We read it and sort out who's who. Those roofs get watched, and the moment a storm hits one it comes back to you as a lead to call."
           href="/homeowners/import"
           cta="Import your list"
         />
