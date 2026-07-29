@@ -1,11 +1,23 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient } from '@/app/_lib/supabase/server'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
 // Working hours and blackout dates used to live on `markets`, which no longer has
 // a UI. They're per-roofer now. `blocked_dates` grants nothing to `authenticated`,
-// so every read/write here goes through the service client after the session check.
+// so every read/write here runs as service_role after the session check.
+//
+// NOT `createServiceClient()` from _lib/supabase/server: that one passes cookies,
+// so @supabase/ssr attaches the signed-in user's JWT and it overrides the service
+// key — the query then runs as `authenticated` and every blocked_dates write fails.
+// This client is cookie-free, so it is actually service_role.
+function adminClient() {
+  return createAdminClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, ''),
+    process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, '')
+  )
+}
 
 const DAY_MIN = 1 // Monday
 const DAY_MAX = 7 // Sunday
@@ -28,7 +40,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const service = await createServiceClient()
+  const service = adminClient()
   const [{ data: profile }, { data: blocked }] = await Promise.all([
     service.from('profiles').select('working_days, working_hours_start, working_hours_end').eq('id', user.id).maybeSingle(),
     service.from('blocked_dates').select('id, blocked_date').eq('roofer_id', user.id).order('blocked_date', { ascending: true }),
@@ -68,7 +80,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'End time must be at least an hour after the start time.' }, { status: 400 })
   }
 
-  const service = await createServiceClient()
+  const service = adminClient()
   const { error } = await service
     .from('profiles')
     .update({ working_days: days, working_hours_start: `${start}:00`, working_hours_end: `${end}:00` })
@@ -86,7 +98,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   if (!isDate(body?.date)) return NextResponse.json({ error: 'Pick a valid date.' }, { status: 400 })
 
-  const service = await createServiceClient()
+  const service = adminClient()
   const { data: existing } = await service
     .from('blocked_dates')
     .select('id')
@@ -117,7 +129,7 @@ export async function DELETE(request: NextRequest) {
   const id = new URL(request.url).searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-  const service = await createServiceClient()
+  const service = adminClient()
   const { error } = await service.from('blocked_dates').delete().eq('id', id).eq('roofer_id', user.id)
   if (error) return NextResponse.json({ error: 'Could not unblock that date.' }, { status: 500 })
   return NextResponse.json({ ok: true })
