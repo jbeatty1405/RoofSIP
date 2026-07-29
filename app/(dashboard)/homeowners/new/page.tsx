@@ -164,7 +164,7 @@ export default function NewHomeownerPage() {
               <div>
                 <p className="text-sm font-semibold text-zinc-200">Monitor only — no consent yet</p>
                 <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
-                  Old customer, notebook lead, or someone you haven't talked to yet. No texts will be sent. You'll get a notification when a storm hits so you can call them directly.
+                  Past customer, or a house that wasn't damaged enough yet. No texts will be sent. You'll get a notification when a storm hits it so you can make the call yourself.
                 </p>
               </div>
             </label>
