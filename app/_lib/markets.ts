@@ -29,6 +29,30 @@ export async function getMarketById(
 // Standard Arizona business hours, Mon–Fri 8am–5pm. The id is the nil UUID so
 // getNextAvailableSlot's blocked-dates lookup stays type-valid and matches
 // nothing (a homeowner with no market has no per-market blocked dates anyway).
+// The roofer's own hours, set in Settings. Markets are gone, so this is the
+// schedule every homeowner is booked against. Falls back to DEFAULT_MARKET when
+// the profile row is missing, so scheduling can never dead-end.
+export async function getRooferSchedule(
+  supabase: SupabaseClient,
+  rooferId: string
+): Promise<Market> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('working_days, working_hours_start, working_hours_end')
+    .eq('id', rooferId)
+    .maybeSingle()
+
+  if (!data?.working_days?.length) return DEFAULT_MARKET
+
+  return {
+    ...DEFAULT_MARKET,
+    roofer_id: rooferId,
+    working_days: data.working_days,
+    working_hours_start: data.working_hours_start ?? DEFAULT_MARKET.working_hours_start,
+    working_hours_end: data.working_hours_end ?? DEFAULT_MARKET.working_hours_end,
+  }
+}
+
 export const DEFAULT_MARKET: Market = {
   id: '00000000-0000-0000-0000-000000000000',
   roofer_id: '00000000-0000-0000-0000-000000000000',

@@ -121,7 +121,7 @@ export default function LoginPage() {
           </h2>
           <div className="flex flex-col gap-3">
             {[
-              'Monitors storms 24/7 across all your markets',
+              'Monitors storms 24/7 on every roof you are watching',
               'Texts homeowners automatically after weather events',
               'Emails you to confirm inspections — no app switching',
             ].map((item, i) => (

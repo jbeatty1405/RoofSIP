@@ -3,7 +3,7 @@ import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHours } from '@/app/_lib/schedule'
-import { getMarketById, getNextAvailableSlot, formatSlot, DEFAULT_MARKET } from '@/app/_lib/markets'
+import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { bumpSmsCount, PER_ACCOUNT_HARD_CEILING } from '@/app/_lib/sms-meter'
@@ -478,8 +478,10 @@ export async function POST(request: NextRequest) {
     // Scheduling behavior is a per-homeowner choice made at add time:
     // auto_schedule = book the next open slot and text a time; false = out-of-market
     // lead (text that the PM will call + hand the PM a call task, no slot booked).
-    // Market (or DEFAULT_MARKET) now survives only as the working-hours source.
-    const effectiveMarket = (await getMarketById(supabase, homeowner.market_id)) ?? DEFAULT_MARKET
+    // Working hours come from the roofer's Settings now. An old market row, if the
+    // homeowner still points at one, wins so nobody's existing setup shifts under them.
+    const effectiveMarket =
+      (await getMarketById(supabase, homeowner.market_id)) ?? (await getRooferSchedule(supabase, profile.id))
     const autoSchedule = homeowner.auto_schedule !== false
 
     let message: string

@@ -28,7 +28,7 @@ const FEATURES = [
       </svg>
     ),
     title: 'NOAA Storm Monitoring',
-    desc: 'Checks weather data every hour across all your markets. When hail or wind hits, your homeowners hear about it first.',
+    desc: 'Checks weather data every hour on every roof you are watching. When hail or wind hits, your homeowners hear about it first.',
   },
   {
     icon: (
@@ -54,8 +54,8 @@ const FEATURES = [
         <circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>
       </svg>
     ),
-    title: 'Market-Based Sending',
-    desc: 'Organize homeowners into markets with custom working hours and blackout dates. Texts go out at the right time in every area.',
+    title: 'Booked On Your Schedule',
+    desc: 'Set your working days, your hours, and the days you are taking off. Inspections only get booked when you are actually available.',
   },
   {
     icon: (
@@ -98,7 +98,7 @@ const STEPS = [
 const PLAN_FEATURES = [
   '250 SMS/month included',
   'Unlimited homeowners',
-  'Unlimited markets',
+  'Your hours and blackout dates',
   'NOAA storm monitoring',
   'AI message generation',
   'Reply tracking & history',

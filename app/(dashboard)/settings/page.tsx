@@ -4,6 +4,7 @@ import ConnectGoogleButton from './ConnectGoogleButton'
 import ManageBillingButton from './ManageBillingButton'
 import CancelSubscriptionButton from './CancelSubscriptionButton'
 import MessageStyleForm from './MessageStyleForm'
+import WorkingHoursForm from './WorkingHoursForm'
 import SignOutButton from '@/app/_components/SignOutButton'
 import PmContactForm from './PmContactForm'
 import ChangePasswordForm from './ChangePasswordForm'
@@ -64,6 +65,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <h2 className="font-semibold text-zinc-200 mb-1">Message style</h2>
           <p className="text-xs text-zinc-600 mb-4">Powered by AI — each text is written fresh, never a copy-paste template.</p>
           <MessageStyleForm userId={user!.id} initial={profile?.message_style ?? null} />
+        </div>
+
+        <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
+          <h2 className="font-semibold text-zinc-200 mb-1">Working hours</h2>
+          <p className="text-xs text-zinc-600 mb-4">The days and hours Hailey is allowed to book inspections.</p>
+          <WorkingHoursForm />
         </div>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
