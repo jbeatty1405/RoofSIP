@@ -1,12 +1,14 @@
 import Link from 'next/link'
 
-// First-run guide. Sequences the *doing*: load your notepad for instant value,
-// then the real muscle — adding a customer in person with consent so Hailey
-// auto-books. Renders only until both are done, then it's gone (no clutter).
+// First-run guide. Mirrors the mobile checklist (same two targets, same story):
+// get roofs on watch for instant value, then the real muscle — homeowners who
+// gave consent, so Hailey auto-books. Desktop keeps its own step 1 destination:
+// bulk import is the whole point of being at a computer.
+const WATCH_GOAL = 5
+const CONSENT_GOAL = 3
+
 export default function GettingStarted({ homeownerCount, optedInCount }: { homeownerCount: number; optedInCount: number }) {
-  const loadedList = homeownerCount > 0
-  const addedConsent = optedInCount > 0
-  if (loadedList && addedConsent) return null
+  if (homeownerCount >= WATCH_GOAL && optedInCount >= CONSENT_GOAL) return null
 
   return (
     <div className="mb-6 bg-zinc-900 rounded-2xl border border-sky-500/30 p-5">
@@ -17,27 +19,31 @@ export default function GettingStarted({ homeownerCount, optedInCount }: { homeo
 
       <div className="flex flex-col gap-3">
         <Step
-          done={loadedList}
           n={1}
-          title="Load your notepad"
-          body="Every past customer and every house that wasn't damaged enough to file yet. A spreadsheet, a screenshot, even a photo of your handwritten notepad. We read it and sort out who's who. Those roofs get watched, and the moment a storm hits one it comes back to you as a lead to call."
+          count={homeownerCount}
+          goal={WATCH_GOAL}
+          title="Put 5 roofs on watch"
+          body="The houses you already looked at that didn't have enough damage to file yet, plus the jobs you've done. Drop in a spreadsheet, a screenshot, even a photo of your handwritten notepad and we'll sort out who's who. No permission to text needed. Those roofs get watched, and the moment a storm hits one it comes back to you as a lead to call."
           href="/homeowners/import"
           cta="Import your list"
         />
         <Step
-          done={addedConsent}
           n={2}
-          title="Add a customer in person"
-          body="This is the one that pays. Get their OK to text, add them, and when a storm hits Hailey texts them, books the inspection, and drops it on your calendar. You just show up."
-          href="/homeowners/new"
-          cta="Add a customer"
+          count={optedInCount}
+          goal={CONSENT_GOAL}
+          title="Get 3 of them on text"
+          body="This is the one that pays. When a homeowner gives you the OK to text, add them with consent. A storm hits and Hailey texts them, books the inspection, and drops it on your calendar. You just show up."
+          href="/homeowners/new?mode=consent"
+          cta="Add with consent"
         />
       </div>
     </div>
   )
 }
 
-function Step({ done, n, title, body, href, cta }: { done: boolean; n: number; title: string; body: string; href: string; cta: string }) {
+function Step({ n, count, goal, title, body, href, cta }: { n: number; count: number; goal: number; title: string; body: string; href: string; cta: string }) {
+  const done = count >= goal
+  const pct = Math.min(100, Math.round((count / goal) * 100))
   return (
     <div className={`flex gap-3.5 p-4 rounded-xl border transition-colors ${done ? 'border-zinc-800 bg-zinc-900/40' : 'border-zinc-700'}`}>
       <div className={`mt-0.5 h-6 w-6 rounded-full shrink-0 flex items-center justify-center text-xs font-bold ${done ? 'bg-green-500 text-white' : 'bg-sky-500/15 text-sky-400 border border-sky-500/40'}`}>
@@ -48,6 +54,12 @@ function Step({ done, n, title, body, href, cta }: { done: boolean; n: number; t
         {!done && (
           <>
             <p className="text-xs text-zinc-500 mt-1 leading-relaxed">{body}</p>
+            <div className="flex items-center gap-3 mt-3">
+              <div className="flex-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className="h-full rounded-full bg-sky-500 transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <span className="text-[11px] font-bold text-zinc-500 shrink-0">{Math.min(count, goal)} of {goal}</span>
+            </div>
             <Link
               href={href}
               className="inline-flex items-center gap-1.5 mt-3 bg-sky-500 hover:bg-sky-600 text-white text-sm font-semibold px-3.5 py-2 rounded-lg transition-colors"

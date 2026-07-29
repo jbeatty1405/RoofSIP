@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient } from '@/app/_lib/supabase/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 
@@ -11,7 +11,12 @@ export default function NewHomeownerPage() {
   const router = useRouter()
   const [form, setForm] = useState({ name: '', phone: '', address: '', zipCode: '' })
   const [autoSchedule, setAutoSchedule] = useState(true)
-  const [monitorOnly, setMonitorOnly] = useState<boolean | null>(null)
+  // The dashboard checklist links here with ?mode=consent / ?mode=monitor so the
+  // form opens on the right choice instead of an unpicked one.
+  const modeParam = useSearchParams().get('mode')
+  const [monitorOnly, setMonitorOnly] = useState<boolean | null>(
+    modeParam === 'consent' ? false : modeParam === 'monitor' ? true : null
+  )
   const [tcpaConsent, setTcpaConsent] = useState(false)
   const [photos, setPhotos] = useState<File[]>([])
   const [previews, setPreviews] = useState<string[]>([])
