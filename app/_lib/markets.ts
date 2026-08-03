@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { toWallClock, fromWallClock } from './timezone'
 
 export type Market = {
   id: string
@@ -63,24 +64,23 @@ export const DEFAULT_MARKET: Market = {
   working_hours_end: '17:00',
 }
 
-// Homeowners are in Arizona (MST year-round, UTC-7, no DST), but the server runs
-// in UTC. All slot math and display must be done in Phoenix time, or a slot meant
-// for 9am gets stored/shown as 2am. See PHOENIX_OFFSET_MS below for the math side.
-const PHOENIX_TZ = 'America/Phoenix'
-const PHOENIX_OFFSET_MS = 7 * 60 * 60 * 1000
-// Shift an instant into a "Phoenix frame" where getUTC* fields read as Phoenix
-// wall-clock; fromPhx converts a computed Phoenix-frame date back to a real UTC instant.
-const toPhx = (d: Date) => new Date(d.getTime() - PHOENIX_OFFSET_MS)
-const fromPhx = (d: Date) => new Date(d.getTime() + PHOENIX_OFFSET_MS)
+// The server runs in UTC, so all slot math and display has to happen in the
+// roofer's wall clock or a slot meant for 9am gets stored and shown as 2am.
+//
+// This used to be hardcoded to Phoenix with a fixed 7-hour offset, which was only
+// ever right because Arizona has no DST. A roofer in Texas would have been booked
+// an hour off for half the year. Callers now pass their own zone; the offset is
+// resolved per instant, so DST transitions are handled.
+export const DEFAULT_TZ = 'America/Phoenix'
 
-export function formatSlot(slot: Date): string {
+export function formatSlot(slot: Date, tz: string = DEFAULT_TZ): string {
   const now = new Date()
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-  const dayKey = (d: Date) => d.toLocaleDateString('en-US', { timeZone: PHOENIX_TZ })
-  const timeStr = slot.toLocaleTimeString('en-US', { timeZone: PHOENIX_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
+  const dayKey = (d: Date) => d.toLocaleDateString('en-US', { timeZone: tz })
+  const timeStr = slot.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })
   if (dayKey(slot) === dayKey(now)) return `today at ${timeStr}`
   if (dayKey(slot) === dayKey(tomorrow)) return `tomorrow at ${timeStr}`
-  const day = slot.toLocaleDateString('en-US', { timeZone: PHOENIX_TZ, weekday: 'long' })
+  const day = slot.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' })
   return `${day} at ${timeStr}`
 }
 
@@ -93,16 +93,19 @@ function jsToDbDay(jsDay: number): number {
 export async function getNextAvailableSlot(
   supabase: SupabaseClient,
   market: Market,
-  roofer_id: string
+  roofer_id: string,
+  tz: string = DEFAULT_TZ
 ): Promise<Date> {
+  const toLocal = (d: Date) => toWallClock(d, tz)
+  const fromLocal = (d: Date) => fromWallClock(d, tz)
   const [startHour] = market.working_hours_start.split(':').map(Number)
   const [endHour] = market.working_hours_end.split(':').map(Number)
   // Last slot must end by working_hours_end, so last start = endHour - 1
   const lastSlotHour = endHour - 1
 
-  // Work entirely in the Phoenix frame so getUTC*/setUTC* below read and write
-  // Phoenix wall-clock; the returned slot is converted back to a real instant.
-  const phxNow = toPhx(new Date())
+  // Work entirely in the roofer's wall-clock frame so getUTC*/setUTC* below read
+  // and write local time; the returned slot is converted back to a real instant.
+  const phxNow = toLocal(new Date())
   const currentHour = phxNow.getUTCHours()
   const todayStr = phxNow.toISOString().slice(0, 10)
   // Storm before 3pm → try same day; at/after 3pm → start from tomorrow
@@ -126,8 +129,8 @@ export async function getNextAvailableSlot(
 
   const takenSlots = new Set(
     (existingBookings ?? []).map((b: any) => {
-      const d = toPhx(new Date(b.proposed_slot))
-      // Normalize to Phoenix YYYY-MM-DD-HH key for comparison
+      const d = toLocal(new Date(b.proposed_slot))
+      // Normalize to a local YYYY-MM-DD-HH key for comparison
       return `${d.toISOString().slice(0, 10)}-${d.getUTCHours()}`
     })
   )
@@ -154,7 +157,7 @@ export async function getNextAvailableSlot(
         if (!takenSlots.has(slotKey)) {
           const slot = new Date(d)
           slot.setUTCHours(h, 0, 0, 0)
-          return fromPhx(slot)
+          return fromLocal(slot)
         }
       }
     }
@@ -162,12 +165,12 @@ export async function getNextAvailableSlot(
     d.setUTCDate(d.getUTCDate() + 1)
   }
 
-  // Fallback: next weekday at start hour (Phoenix)
-  const fallback = toPhx(new Date())
+  // Fallback: next weekday at start hour, in the roofer's zone
+  const fallback = toLocal(new Date())
   fallback.setUTCDate(fallback.getUTCDate() + 1)
   while ([0, 6].includes(fallback.getUTCDay())) {
     fallback.setUTCDate(fallback.getUTCDate() + 1)
   }
   fallback.setUTCHours(startHour, 0, 0, 0)
-  return fromPhx(fallback)
+  return fromLocal(fallback)
 }

@@ -2,7 +2,8 @@ import { createServiceClient } from '@/app/_lib/supabase/server'
 import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
-import { isQuietHours } from '@/app/_lib/schedule'
+import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
+import { rooferTimezone } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
@@ -103,7 +104,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ paused: true, reason: 'STORM_CRON_ENABLED not set' })
   }
 
-  if (isQuietHours()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
+  // Only bail on the whole run when there is nobody in the country we could
+  // legally text. Per-homeowner quiet hours are enforced at each send site below,
+  // against that homeowner's own ZIP.
+  if (isQuietHoursEverywhere()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
 
   if (await isMonthlySmsCapped()) {
     console.error('[weather] Monthly SMS cap reached — all sends blocked for the rest of this month')
@@ -181,6 +185,9 @@ export async function POST(request: NextRequest) {
     for (const h of uncontacted as any[]) {
       if (introSent >= MAX_INTRO_SMS_PER_RUN) break
       if (alreadySentIds.has(h.id)) continue
+      // This homeowner's local window, not the run's. A deferred intro must wait
+      // for 8am where the homeowner lives.
+      if (isQuietHoursForZip(h.zip_code)) continue
       const profile = h.profiles
       if (!profile || profile.subscription_status !== 'active') continue
       if (pmPhoneSet.has(normalizePhone(h.phone))) continue // never text a contractor's own number
@@ -287,7 +294,7 @@ export async function POST(request: NextRequest) {
 
   const { data: activeHomeowners } = await supabase
     .from('homeowners')
-    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
+    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style, billing_state)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
     .eq('monitor_only', false)
@@ -445,6 +452,10 @@ export async function POST(request: NextRequest) {
     if (!profile || profile.subscription_status !== 'active') continue
     if (pmPhoneSet.has(normalizePhone(homeowner.phone))) continue // never text a contractor's own number
     if (confirmedSet.has(homeowner.id)) continue // already has a confirmed inspection — don't re-pitch or clobber it
+    // TCPA hours are the homeowner's, resolved from their ZIP. A storm firing at
+    // 8pm Mountain must not text an Eastern homeowner at 10pm. They stay eligible
+    // for the next run inside their own window; storms don't expire in an hour.
+    if (isQuietHoursForZip(homeowner.zip_code)) continue
     // sms_cap (default 1,000) is the included-tier / upsell trigger, NOT a wall —
     // keep sending past it (bumpSmsCount pings Justin once on the crossing). Only
     // the higher per-account runaway ceiling actually stops a single account from
@@ -482,6 +493,10 @@ export async function POST(request: NextRequest) {
     // homeowner still points at one, wins so nobody's existing setup shifts under them.
     const effectiveMarket =
       (await getMarketById(supabase, homeowner.market_id)) ?? (await getRooferSchedule(supabase, profile.id))
+    // Working hours are the roofer's, so slot math runs in the roofer's zone,
+    // derived from the state they signed up in. A Texas contractor's 8-5 is
+    // Central, not Phoenix.
+    const rooferTz = rooferTimezone(profile)
     const autoSchedule = homeowner.auto_schedule !== false
 
     let message: string
@@ -494,7 +509,7 @@ export async function POST(request: NextRequest) {
       // can never be offered (or booked into) the same time, even across
       // overlapping cron runs.
       for (let attempt = 0; attempt < 6 && !proposedSlot; attempt++) {
-        const slot = await getNextAvailableSlot(supabase, effectiveMarket, profile.id)
+        const slot = await getNextAvailableSlot(supabase, effectiveMarket, profile.id, rooferTz)
         const { error: reserveErr } = await supabase.from('pending_bookings').upsert({
           homeowner_id: homeowner.id,
           roofer_id: homeowner.roofer_id,
@@ -509,7 +524,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (proposedSlot) {
-      const proposedTime = formatSlot(proposedSlot)
+      const proposedTime = formatSlot(proposedSlot, rooferTz)
       if (profile.message_style) {
         try {
           message = await generateStormSms({

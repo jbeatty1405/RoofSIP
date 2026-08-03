@@ -4,7 +4,7 @@ import { notifyRoofer } from '@/app/_lib/notify'
 import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { preClassifyIntent } from '@/app/_lib/ai-sms'
 import { phoneMatchCandidates } from '@/app/_lib/phone'
-import { isQuietHours } from '@/app/_lib/schedule'
+import { isQuietHoursForZip } from '@/app/_lib/schedule'
 import { APP_URL } from '@/app/_lib/url'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
@@ -165,7 +165,9 @@ export async function POST(request: NextRequest) {
     .eq('homeowner_id', homeowner.id)
     .maybeSingle()
 
-  const quiet = isQuietHours()
+  // This homeowner's own window, from their ZIP — a reply coming in at 9:30pm
+  // Eastern must get the short ack, even though it is only 6:30pm in Phoenix.
+  const quiet = isQuietHoursForZip(homeowner.zip_code)
 
   // Inbound rate limit: cap reply volume from spam/loops.
   const hourAgo = new Date(Date.now() - 3600 * 1000).toISOString()

@@ -30,7 +30,7 @@ vi.mock('@/app/_lib/twilio', () => ({
 }))
 
 vi.mock('@/app/_lib/schedule', () => ({
-  isQuietHours: vi.fn().mockReturnValue(false),
+  isQuietHoursForZip: vi.fn().mockReturnValue(false),
 }))
 
 vi.mock('@/app/_lib/rate-limit', () => ({
@@ -195,10 +195,11 @@ describe('POST /api/homeowners', () => {
   })
 
   it('returns deferred=true during quiet hours (no SMS sent)', async () => {
-    const { isQuietHours } = await import('@/app/_lib/schedule')
+    const { isQuietHoursForZip } = await import('@/app/_lib/schedule')
     const { homeownerCreatesLast24h } = await import('@/app/_lib/rate-limit')
     vi.mocked(homeownerCreatesLast24h).mockResolvedValue(0) // reset from rate-limit test
-    vi.mocked(isQuietHours).mockReturnValue(true)
+    // Quiet hours are now resolved from the new homeowner's own ZIP.
+    vi.mocked(isQuietHoursForZip).mockReturnValue(true)
     const res = await POST(makeRequest({
       name: 'Jane Doe',
       phone: '6025551234',

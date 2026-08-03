@@ -1,7 +1,7 @@
 import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildIntroSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { bumpSmsCount } from '@/app/_lib/sms-meter'
-import { isQuietHours } from '@/app/_lib/schedule'
+import { isQuietHoursForZip } from '@/app/_lib/schedule'
 import { homeownerCreatesLast24h, HOMEOWNER_DAILY_LIMIT } from '@/app/_lib/rate-limit'
 import { isSameOrigin } from '@/app/_lib/csrf'
 import { NextRequest, NextResponse } from 'next/server'
@@ -75,8 +75,12 @@ export async function POST(request: NextRequest) {
     .eq('id', user.id)
     .single()
 
-  if (monitorOnly || !tcpaConsent || isQuietHours()) {
-    return NextResponse.json({ id: homeowner.id, deferred: (!monitorOnly && tcpaConsent && isQuietHours()) })
+  // Quiet hours are the new homeowner's own, resolved from the ZIP just saved —
+  // not the roofer's and not Arizona's. A Phoenix contractor adding a Virginia
+  // homeowner at 6pm MST must not fire an intro text at 8pm Eastern.
+  const quietForThisHomeowner = isQuietHoursForZip(homeowner.zip_code)
+  if (monitorOnly || !tcpaConsent || quietForThisHomeowner) {
+    return NextResponse.json({ id: homeowner.id, deferred: (!monitorOnly && tcpaConsent && quietForThisHomeowner) })
   }
 
   // Only paying (active) accounts send automated SMS. The homeowner is still
