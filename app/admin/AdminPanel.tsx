@@ -171,7 +171,7 @@ export default function AdminPanel() {
     <div>
       {/* Summary — headline numbers count ALL paying customers (Prowest teammates pay too) */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-6">
-        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="all paying" />
+        <Stat label="Subscribers" value={String(stats.subscribers)} accent="text-white" hint="paying + trial" />
         <Stat label="MRR" value={`$${stats.mrr.toFixed(0)}`} accent="text-green-400" hint="all paying" />
         <Stat label="Paying" value={String(stats.paying)} accent="text-green-400" />
         <Stat label="On trial" value={String(stats.trialing)} accent="text-sky-400" />
