@@ -151,7 +151,7 @@ export default function WorkingHoursForm() {
             {HOURS.map(h => <option key={h.value} value={h.value}>{h.label}</option>)}
           </select>
         </div>
-        <p className="text-xs text-zinc-600 pb-2.5">Phoenix time</p>
+        <p className="text-xs text-zinc-600 pb-2.5">your local time</p>
       </div>
 
       <div>
