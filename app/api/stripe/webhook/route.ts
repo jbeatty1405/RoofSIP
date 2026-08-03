@@ -2,6 +2,7 @@ import { createServiceClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
 import { sendWelcomeEmail, sendTrialEndingEmail } from '@/app/_lib/email'
 import { ADMIN_USER_ID, notifyAdmin, claimOnce, describePm, logBillingEvent } from '@/app/_lib/admin'
+import { notifyRoofer } from '@/app/_lib/notify'
 import type Stripe from 'stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -313,6 +314,26 @@ export async function POST(request: NextRequest) {
       amountCents: obj.amount_due ?? null,
       ...snap,
     })
+
+    // Tell the CUSTOMER, in-app + push. Nothing about their service changes for the
+    // full 14-day retry window, so this notice is the only thing prompting them to
+    // fix the card before it runs out. Fires once per Stripe retry attempt, which
+    // spaces itself out (8 attempts across 2 weeks) rather than spamming.
+    if (snap.userId) {
+      try {
+        await notifyRoofer(supabase, {
+          roofer_id: snap.userId,
+          type: 'billing',
+          pushTitle: '💳 Payment didn\'t go through',
+          message: 'Your card was declined. Nothing has been switched off — your homeowners are still monitored. Update your card in Settings to keep it that way.',
+          pushBody: 'Your card was declined. Update it in Settings — nothing is switched off yet.',
+          data: { event: 'payment_failed', subId },
+        })
+      } catch (err) {
+        // Never let a notification failure break the webhook and make Stripe retry.
+        console.error('[webhook] payment_failed customer notice failed:', err)
+      }
+    }
 
     // Owner alert: money at risk. Not deduped — Stripe only fires this on genuine
     // retry attempts, and each failed attempt is worth knowing about.

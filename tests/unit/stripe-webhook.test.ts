@@ -174,6 +174,27 @@ describe('POST /api/stripe/webhook (RoofSIP)', () => {
     expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive', billing_state: 'canceled' })
   })
 
+  // Nothing about the customer's service changes for 14 days, so this notice is the
+  // only prompt to fix the card before the window runs out.
+  it('notifies the CUSTOMER in-app + push when their payment fails', async () => {
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: 'user_marshall', pm_name: 'Marshall', company_name: 'Prowest', stripe_customer_id: 'cus_x' },
+      error: null,
+    })
+    mockConstructEvent.mockReturnValue({
+      type: 'invoice.payment_failed',
+      id: 'evt_pf_notice',
+      data: { object: { customer: 'cus_x', amount_due: 2000, subscription: 'sub_x' } },
+    })
+
+    const res = await POST(makeRequest('{}'))
+    expect(res.status).toBe(200)
+    expect(mockFrom).toHaveBeenCalledWith('notifications')
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ roofer_id: 'user_marshall', type: 'billing' }),
+    )
+  })
+
   // Newer Stripe API versions nest the subscription under parent.subscription_details.
   it('resolves the subscription id from parent.subscription_details on a failed invoice', async () => {
     mockConstructEvent.mockReturnValue({
