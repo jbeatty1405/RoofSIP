@@ -38,6 +38,9 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/consent') ||
     pathname.startsWith('/privacy') ||
     pathname.startsWith('/terms') ||
+    // Google Play requires a publicly reachable account-deletion page,
+    // so this one must resolve while signed out
+    pathname.startsWith('/delete-account') ||
     // metadata image routes must stay public so link previews unfurl
     pathname.startsWith('/opengraph-image') ||
     pathname.startsWith('/twitter-image') ||
