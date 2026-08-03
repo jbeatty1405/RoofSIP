@@ -97,7 +97,7 @@ function SubscribeContent() {
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-800 accent-sky-500"
           />
           <span className="text-xs text-zinc-400 leading-relaxed">
-            I understand my subscription auto-renews at $20/month after the 60-day free trial until I cancel, and I agree to the{' '}
+            I understand my subscription auto-renews at $20/month until I cancel, and I agree to the{' '}
             <a href="/terms" target="_blank" className="text-sky-400 underline">Terms</a> and{' '}
             <a href="/privacy" target="_blank" className="text-sky-400 underline">Privacy Policy</a>.
           </span>
