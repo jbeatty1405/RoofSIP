@@ -5,6 +5,7 @@ import NotificationBell from '@/app/_components/NotificationBell'
 import SignOutButton from '@/app/_components/SignOutButton'
 import MobileDrawer from '@/app/_components/MobileDrawer'
 import NavLink from '@/app/_components/NavLink'
+import BillingBanner from '@/app/_components/BillingBanner'
 
 const NAV = [
   {
@@ -52,13 +53,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('subscription_status, stripe_subscription_id')
+    .select('subscription_status, stripe_subscription_id, billing_state')
     .eq('id', user.id)
     .single()
   if (profile?.subscription_status !== 'active') {
-    // If checkout was completed but webhook hasn't fired yet, resume polling
+    // Only poll when checkout genuinely just completed and the webhook may still be
+    // in flight. A lapsed subscription must NOT land here — it produces a spinner
+    // that times out with no explanation. `reason=lapsed` renders a real message.
     if (profile?.stripe_subscription_id) {
-      redirect('/subscribe?success=true')
+      redirect(profile.billing_state === 'canceled' ? '/subscribe?reason=lapsed' : '/subscribe?success=true')
     }
     redirect('/subscribe')
   }
@@ -105,7 +108,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <NotificationBell count={unread} />
         </header>
 
-        <main className="flex-1 p-4 md:p-8 overflow-auto">{children}</main>
+        <main className="flex-1 p-4 md:p-8 overflow-auto">
+          {profile?.billing_state === 'past_due' && <BillingBanner />}
+          {children}
+        </main>
       </div>
     </div>
   )

@@ -72,6 +72,51 @@ function SubscribeContent() {
     }
   }
 
+  // Stripe exhausted its retries and cancelled. These users used to be routed into
+  // the activation poller, which spun for 30s and then claimed their payment was
+  // received — the opposite of what happened. Tell them the truth instead.
+  if (searchParams.get('reason') === 'lapsed') {
+    return (
+      <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+        <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-4">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-white mb-2">Your subscription ended</h2>
+        <p className="text-zinc-400 text-sm mb-6">
+          We tried your card several times over the last two weeks and couldn&apos;t complete the
+          payment, so the subscription closed. Your homeowners and settings are all still here.
+          Start it back up and monitoring picks up where it left off.
+        </p>
+        <label className="flex items-start gap-2 text-left mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={consented}
+            onChange={e => setConsented(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-600 bg-zinc-800 accent-sky-500"
+          />
+          <span className="text-xs text-zinc-400 leading-relaxed">
+            I understand my subscription auto-renews at $20/month after the 60-day free trial until I cancel, and I agree to the{' '}
+            <a href="/terms" target="_blank" className="text-sky-400 underline">Terms</a> and{' '}
+            <a href="/privacy" target="_blank" className="text-sky-400 underline">Privacy Policy</a>.
+          </span>
+        </label>
+        <button
+          onClick={handleSubscribe}
+          disabled={loading || !consented}
+          className="w-full bg-sky-500 hover:bg-sky-600 disabled:opacity-60 text-white py-2.5 rounded-xl text-sm font-semibold transition-colors mb-3"
+        >
+          {loading ? 'Opening…' : 'Restart subscription'}
+        </button>
+        {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+        <a href="mailto:azroofsip@gmail.com" className="block text-center text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+          Contact support
+        </a>
+      </div>
+    )
+  }
+
   if (activating) {
     return (
       <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">

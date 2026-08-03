@@ -7,6 +7,30 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
+// Stripe subscription statuses that still entitle the customer to the product.
+// `past_due` is deliberately included: Stripe is mid-retry and the customer has
+// not churned yet. Access ends at `unpaid`/`canceled`, i.e. once retries are done.
+const ACCESS_STATUSES = new Set(['active', 'trialing', 'past_due'])
+
+function hasAccess(status: string | null | undefined): boolean {
+  return ACCESS_STATUSES.has(status ?? '')
+}
+
+// Billing health, tracked separately from access so a declined card is visible
+// without silently switching the product off.
+function billingStateFor(status: string | null | undefined): 'active' | 'past_due' | 'canceled' {
+  if (status === 'past_due' || status === 'incomplete') return 'past_due'
+  if (status === 'unpaid' || status === 'canceled' || status === 'incomplete_expired') return 'canceled'
+  return 'active'
+}
+
+// Newer Stripe API versions moved the subscription off the invoice root and into
+// `parent.subscription_details`. Reading only `invoice.subscription` wrote NULL
+// subscription ids into the billing ledger.
+function invoiceSubscriptionId(obj: any): string | null {
+  return (obj.subscription ?? obj.parent?.subscription_details?.subscription ?? null) as string | null
+}
+
 // Best-effort identity for the billing ledger + alerts. Resolves the PM behind a
 // subscription/customer at event time, so a later profile deletion can't erase
 // who the event belonged to. Returns nulls (never throws) if no profile matches.
@@ -159,10 +183,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.type === 'customer.subscription.updated') {
-    const isActive = obj.status === 'active' || obj.status === 'trialing'
+    // `past_due` means Stripe is still retrying the card (Smart Retries: 8 attempts
+    // over 2 weeks). Keeping access through that window is the whole point — cutting
+    // service on the first decline killed storm monitoring for a paying customer.
+    // Access only ends when Stripe actually gives up, which arrives as
+    // `subscription.deleted` / `unpaid` and is handled below.
     await supabase
       .from('profiles')
-      .update({ subscription_status: isActive ? 'active' : 'inactive' })
+      .update({
+        subscription_status: hasAccess(obj.status) ? 'active' : 'inactive',
+        billing_state: billingStateFor(obj.status),
+      })
       .eq('stripe_subscription_id', obj.id)
 
     const snap = await resolveSnapshot(supabase, { subscriptionId: obj.id, customerId: obj.customer })
@@ -183,7 +214,7 @@ export async function POST(request: NextRequest) {
 
     await supabase
       .from('profiles')
-      .update({ subscription_status: 'inactive' })
+      .update({ subscription_status: 'inactive', billing_state: 'canceled' })
       .eq('stripe_subscription_id', obj.id)
 
     const isCancel = event.type === 'customer.subscription.deleted'
@@ -208,11 +239,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.type === 'customer.subscription.resumed' || event.type === 'invoice.payment_succeeded') {
-    const subId = obj.subscription ?? obj.id
+    const subId = event.type === 'invoice.payment_succeeded'
+      ? invoiceSubscriptionId(obj)
+      : obj.id
     if (subId) {
+      // A successful charge clears any past_due flag — the card went through.
       await supabase
         .from('profiles')
-        .update({ subscription_status: 'active' })
+        .update({ subscription_status: 'active', billing_state: 'active' })
         .eq('stripe_subscription_id', subId)
     }
 
@@ -259,7 +293,17 @@ export async function POST(request: NextRequest) {
   }
 
   if (event.type === 'invoice.payment_failed') {
-    const subId = (obj.subscription ?? null) as string | null
+    const subId = invoiceSubscriptionId(obj)
+
+    // Flag the billing trouble WITHOUT touching access. Stripe keeps retrying and
+    // the customer keeps working; this is what the dashboard banner reads.
+    if (subId) {
+      await supabase
+        .from('profiles')
+        .update({ billing_state: 'past_due' })
+        .eq('stripe_subscription_id', subId)
+    }
+
     const snap = await resolveSnapshot(supabase, { subscriptionId: subId, customerId: obj.customer })
     await logBillingEvent(supabase, {
       eventType: 'payment_failed',

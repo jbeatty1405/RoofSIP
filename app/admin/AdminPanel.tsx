@@ -10,6 +10,7 @@ type UserRow = {
   pm_phone: string | null
   pm_email: string | null
   subscription_status: string | null
+  billing_state?: string | null
   is_internal: boolean
   orphan: boolean
   created_at: string
@@ -262,6 +263,11 @@ export default function AdminPanel() {
                       {kind === 'paying' && (
                         <span className="text-[11px] text-green-400">
                           ${((u.monthly_amount ?? 0) / 100).toFixed(0)}/mo · renews {fmtDate(u.period_end)}
+                        </span>
+                      )}
+                      {u.billing_state === 'past_due' && (
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          Payment failed · retrying
                         </span>
                       )}
                       {!u.orphan && (u.subscription_status === 'active' ? (

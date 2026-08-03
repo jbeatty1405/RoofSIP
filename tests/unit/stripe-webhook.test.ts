@@ -100,7 +100,7 @@ describe('POST /api/stripe/webhook (RoofSIP)', () => {
 
     const res = await POST(makeRequest('{}'))
     expect(res.status).toBe(200)
-    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive' })
+    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive', billing_state: 'canceled' })
   })
 
   it('handles customer.subscription.deleted — writes a canceled ledger row', async () => {
@@ -146,10 +146,12 @@ describe('POST /api/stripe/webhook (RoofSIP)', () => {
 
     const res = await POST(makeRequest('{}'))
     expect(res.status).toBe(200)
-    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'active' })
+    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'active', billing_state: 'active' })
   })
 
-  it('handles customer.subscription.updated — inactive on past_due', async () => {
+  // A declined card must NOT switch the product off. Stripe retries for 2 weeks;
+  // cutting storm monitoring on attempt 1 took a paying customer offline.
+  it('handles customer.subscription.updated — past_due KEEPS access, flags billing', async () => {
     mockConstructEvent.mockReturnValue({
       type: 'customer.subscription.updated',
       data: { object: { id: 'sub_upd', status: 'past_due' } },
@@ -157,7 +159,42 @@ describe('POST /api/stripe/webhook (RoofSIP)', () => {
 
     const res = await POST(makeRequest('{}'))
     expect(res.status).toBe(200)
-    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive' })
+    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'active', billing_state: 'past_due' })
+  })
+
+  // Once Stripe gives up retrying, access genuinely ends.
+  it('handles customer.subscription.updated — unpaid ends access', async () => {
+    mockConstructEvent.mockReturnValue({
+      type: 'customer.subscription.updated',
+      data: { object: { id: 'sub_upd', status: 'unpaid' } },
+    })
+
+    const res = await POST(makeRequest('{}'))
+    expect(res.status).toBe(200)
+    expect(mockUpdate).toHaveBeenCalledWith({ subscription_status: 'inactive', billing_state: 'canceled' })
+  })
+
+  // Newer Stripe API versions nest the subscription under parent.subscription_details.
+  it('resolves the subscription id from parent.subscription_details on a failed invoice', async () => {
+    mockConstructEvent.mockReturnValue({
+      type: 'invoice.payment_failed',
+      id: 'evt_pf_nested',
+      data: {
+        object: {
+          customer: 'cus_x',
+          amount_due: 2000,
+          parent: { subscription_details: { subscription: 'sub_nested' } },
+        },
+      },
+    })
+
+    const res = await POST(makeRequest('{}'))
+    expect(res.status).toBe(200)
+    expect(mockUpdate).toHaveBeenCalledWith({ billing_state: 'past_due' })
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ stripe_subscription_id: 'sub_nested' }),
+      expect.anything(),
+    )
   })
 
   it('returns 200 received for unhandled events', async () => {

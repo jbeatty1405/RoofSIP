@@ -51,7 +51,7 @@ export async function GET() {
   const [{ data: profiles }, authList, homeownersRes, bookingsRes] = await Promise.all([
     service
       .from('profiles')
-      .select('id, pm_name, company_name, pm_phone, pm_email, subscription_status, stripe_customer_id, stripe_subscription_id, sms_count_this_month, sms_cap, is_internal, created_at')
+      .select('id, pm_name, company_name, pm_phone, pm_email, subscription_status, billing_state, stripe_customer_id, stripe_subscription_id, sms_count_this_month, sms_cap, is_internal, created_at')
       .order('created_at', { ascending: false }),
     service.auth.admin.listUsers(),
     service.from('homeowners').select('roofer_id, is_test'),
@@ -120,6 +120,7 @@ export async function GET() {
       pm_phone: p.pm_phone,
       pm_email: p.pm_email,
       subscription_status: p.subscription_status,
+      billing_state: p.billing_state ?? 'active',
       is_internal: p.is_internal ?? false,
       orphan: false,
       created_at: p.created_at,
@@ -149,6 +150,7 @@ export async function GET() {
       pm_phone: null,
       pm_email: s.customerEmail ?? null,
       subscription_status: null, // no profile
+      billing_state: null,
       is_internal: false,
       orphan: true,
       created_at: s.canceledAt ? new Date(s.canceledAt * 1000).toISOString() : new Date(0).toISOString(),
