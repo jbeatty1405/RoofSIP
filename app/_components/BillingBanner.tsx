@@ -30,9 +30,11 @@ export default function BillingBanner() {
     <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="flex-1">
         <p className="text-sm font-medium text-amber-300">Your last payment didn&apos;t go through</p>
+        {/* Reason-neutral: most declines are insufficient funds, where the card is
+            fine and "update your card" is the wrong instruction. */}
         <p className="text-xs text-amber-200/70 mt-0.5">
-          Nothing has been switched off. Your homeowners are still being monitored and texted while
-          we retry the card. Update it to stay ahead of it.
+          Nothing has been switched off. Your homeowners are still being monitored and texted. We&apos;ll
+          keep retrying over the next two weeks, so it clears on its own once funds are available.
         </p>
         {error && <p className="text-xs text-red-400 mt-1">{error}</p>}
       </div>
@@ -41,7 +43,7 @@ export default function BillingBanner() {
         disabled={loading}
         className="shrink-0 px-3 py-2 rounded-xl text-sm font-medium bg-amber-500 text-zinc-950 hover:bg-amber-400 disabled:opacity-60 transition-colors"
       >
-        {loading ? 'Opening…' : 'Update card'}
+        {loading ? 'Opening…' : 'Manage billing'}
       </button>
     </div>
   )

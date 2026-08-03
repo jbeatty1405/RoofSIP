@@ -324,9 +324,12 @@ export async function POST(request: NextRequest) {
         await notifyRoofer(supabase, {
           roofer_id: snap.userId,
           type: 'billing',
+          // Reason-neutral on purpose. The most common decline is insufficient
+          // funds, where the card is perfectly good and telling someone to
+          // "update your card" sends them to fix something that isn't broken.
           pushTitle: '💳 Payment didn\'t go through',
-          message: 'Your card was declined. Nothing has been switched off — your homeowners are still monitored. Update your card in Settings to keep it that way.',
-          pushBody: 'Your card was declined. Update it in Settings — nothing is switched off yet.',
+          message: 'Your $20 payment didn\'t go through. Nothing has been switched off and your homeowners are still monitored. We\'ll keep retrying over the next two weeks, so it clears on its own once funds are available. You can also swap the card in Settings.',
+          pushBody: 'Your $20 payment didn\'t go through. Nothing is switched off. We\'ll keep retrying.',
           data: { event: 'payment_failed', subId },
         })
       } catch (err) {
