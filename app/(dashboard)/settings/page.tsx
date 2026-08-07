@@ -8,6 +8,7 @@ import WorkingHoursForm from './WorkingHoursForm'
 import SignOutButton from '@/app/_components/SignOutButton'
 import PmContactForm from './PmContactForm'
 import ChangePasswordForm from './ChangePasswordForm'
+import CompanyNameForm from './CompanyNameForm'
 import FeedbackForm from './FeedbackForm'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ success?: string; error?: string }> }) {
@@ -37,16 +38,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
           <h2 className="font-semibold text-zinc-200 mb-1">Account</h2>
           <p className="text-sm text-zinc-500 mb-4">{user?.email}</p>
-          <dl className="grid grid-cols-2 gap-3">
-            <div>
-              <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Your name</dt>
-              <dd className="text-sm text-zinc-300 mt-1">{profile?.pm_name || '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Company</dt>
-              <dd className="text-sm text-zinc-300 mt-1">{profile?.company_name || '—'}</dd>
-            </div>
+          <dl className="mb-5">
+            <dt className="text-xs text-zinc-500 uppercase font-medium tracking-wide">Your name</dt>
+            <dd className="text-sm text-zinc-300 mt-1">{profile?.pm_name || '—'}</dd>
           </dl>
+          <CompanyNameForm userId={user!.id} initialCompany={profile?.company_name ?? null} />
         </div>
 
         <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5">
