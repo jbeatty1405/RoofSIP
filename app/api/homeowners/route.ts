@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient, buildIntroSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { bumpSmsCount } from '@/app/_lib/sms-meter'
 import { isQuietHoursForZip } from '@/app/_lib/schedule'
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  const service = await createServiceClient()
+  const service = createAdminClient()
   const { data: profile } = await service
     .from('profiles')
     .select('pm_name, company_name, subscription_status, sms_cap')
@@ -108,13 +108,21 @@ export async function POST(request: NextRequest) {
       messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!,
       to: phone,
     })
-    await service.from('sms_logs').insert({
+    // This insert was silently 42501-ing as the signed-in user, so the intro
+    // text went out but nothing recorded it. The storm cron dedupes intros by
+    // reading sms_logs, so the homeowner looked uncontacted on the next run and
+    // got the SAME intro text a second time. Never swallow this error again.
+    const { error: logErr } = await service.from('sms_logs').insert({
       roofer_id: user.id,
       homeowner_id: homeowner.id,
       message: introMsg,
       direction: 'outbound',
       status: 'sent',
+      message_type: 'intro',
     })
+    if (logErr) {
+      console.error('[homeowners] intro SMS sent but NOT logged — storm cron may re-send it:', logErr)
+    }
     // Meter this send toward the per-account monthly count + upsell signal.
     await bumpSmsCount(service, user.id, profile?.sms_cap ?? 1000, profile?.company_name ?? pmName)
   } catch (err) {

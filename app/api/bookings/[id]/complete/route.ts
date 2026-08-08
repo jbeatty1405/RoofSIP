@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { getTwilioClient } from '@/app/_lib/twilio'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -37,16 +37,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const msg = `Hi ${firstName}! Thanks for letting ${pmName}${company} inspect your roof today. If you have any questions or would like an estimate, feel free to reply here anytime.`
 
   try {
-    const service = await createServiceClient()
+    const service = createAdminClient()
     const twilio = getTwilioClient()
     await twilio.messages.create({ body: msg, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to: homeowner.phone })
-    await service.from('sms_logs').insert({
+    const { error: logErr } = await service.from('sms_logs').insert({
       roofer_id: user.id,
       homeowner_id: booking.homeowner_id,
       message: msg,
       direction: 'outbound',
       status: 'sent',
     })
+    // Same 42501 as the intro log. Lower stakes here (nothing re-sends off this
+    // row) but a missing row still means the roofer's message history lies.
+    if (logErr) {
+      console.error('[bookings] thank-you SMS sent but NOT logged:', logErr)
+    }
   } catch (err) {
     console.error('Thank-you SMS failed:', err)
   }

@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return new NextResponse('Unauthorized', { status: 401 })
 
-  const service = await createServiceClient()
+  const service = createAdminClient()
   const allowed = await checkRateLimit(service, user.id, 'export', 10, 3600 * 1000)
   if (!allowed) return new NextResponse('Export rate limit reached. Try again in an hour.', { status: 429 })
 

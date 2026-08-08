@@ -4,7 +4,7 @@
 // can't blast opt-in SMS to hundreds of people, so it's cost- and TCPA-safe.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { isSameOrigin } from '@/app/_lib/csrf'
 import { ADMIN_USER_ID } from '@/app/_lib/admin'
 import { reviewRow, MAX_IMPORT_ROWS, type RawRow } from '@/app/_lib/import-map'
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
   const seen = new Set<string>()
   const deduped = valid.filter((r) => (seen.has(r.phone) ? false : (seen.add(r.phone), true)))
 
-  const service = await createServiceClient()
+  const service = createAdminClient()
 
   // Skip phones already on this roofer's account (the table has a unique
   // constraint on phone per roofer, so this avoids a whole-batch failure).

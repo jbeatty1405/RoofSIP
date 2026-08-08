@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { stripe } from '@/app/_lib/stripe'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const service = await createServiceClient()
+  const service = createAdminClient()
 
   // Cancel any active Stripe subscription so a deleted user is never billed again.
   const { data: profile } = await service

@@ -14,10 +14,13 @@ vi.mock('@/app/_lib/supabase/server', () => ({
     auth: { getUser: mockGetUser },
     from: mockFrom,
   }),
-  createServiceClient: vi.fn().mockResolvedValue({
+  // createAdminClient, not createServiceClient: the latter carries request
+  // cookies, so in a signed-in route it runs as the user and the sms_logs
+  // insert 42501s. Note it is synchronous, not a promise.
+  createAdminClient: vi.fn(() => ({
     from: mockFrom,
     auth: { admin: {} },
-  }),
+  })),
 }))
 
 const mockTwilioCreate = vi.fn()

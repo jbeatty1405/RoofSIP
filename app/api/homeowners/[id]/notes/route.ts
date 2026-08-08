@@ -1,4 +1,4 @@
-import { createClient, createServiceClient } from '@/app/_lib/supabase/server'
+import { createClient, createAdminClient } from '@/app/_lib/supabase/server'
 import { isSameOrigin } from '@/app/_lib/csrf'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (typeof notes !== 'string') return NextResponse.json({ error: 'Invalid notes' }, { status: 400 })
   if (notes.length > 8000) return NextResponse.json({ error: 'Notes too long' }, { status: 400 })
 
-  const service = await createServiceClient()
+  const service = createAdminClient()
   const allowed = await checkRateLimit(service, user.id, 'notes_update', 30, 3600 * 1000)
   if (!allowed) return NextResponse.json({ error: 'Too many updates. Try again later.' }, { status: 429 })
 

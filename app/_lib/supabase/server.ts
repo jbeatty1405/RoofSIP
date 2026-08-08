@@ -16,6 +16,19 @@ export async function createClient() {
   })
 }
 
+/**
+ * @deprecated DO NOT USE. Despite the name this is NOT service_role.
+ *
+ * It is handed the service key and the request cookies, and when a user is
+ * signed in that session wins — every query runs as `authenticated`. It has
+ * silently broken three separate things: /api/schedule's blocked_dates writes,
+ * the checkout rate limiter, and the intro-SMS log (which made the storm cron
+ * re-text homeowners). Each one failed quietly because the error was ignored.
+ *
+ * Use createAdminClient() below. This is kept only for the remaining webhook
+ * and cron callers, which have no cookies and are therefore unaffected; once
+ * they are migrated, delete it.
+ */
 export async function createServiceClient() {
   const cookieStore = await cookies()
   return createServerClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''), {
