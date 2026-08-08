@@ -8,7 +8,10 @@ const mockCookieEq = vi.fn(() => ({ single: mockCookieSingle }))
 const mockCookieSelect = vi.fn(() => ({ eq: mockCookieEq }))
 const mockCookieFrom = vi.fn(() => ({ select: mockCookieSelect }))
 
-// Service client (createServiceClient): rate-limit rpc + profiles update chain
+// Admin client (createAdminClient): rate-limit rpc + profiles update chain.
+// Deliberately NOT createServiceClient — that one carries request cookies, so
+// inside a signed-in route it acts as the user and both of these calls 42501.
+// It is also synchronous, not a promise.
 const mockRpc = vi.fn()
 const mockSvcEq = vi.fn().mockResolvedValue({ error: null })
 const mockSvcUpdate = vi.fn(() => ({ eq: mockSvcEq }))
@@ -19,10 +22,10 @@ vi.mock('@/app/_lib/supabase/server', () => ({
     auth: { getUser: mockGetUser },
     from: mockCookieFrom,
   }),
-  createServiceClient: vi.fn().mockResolvedValue({
+  createAdminClient: vi.fn(() => ({
     rpc: mockRpc,
     from: mockSvcFrom,
-  }),
+  })),
 }))
 
 const mockSubsList = vi.fn()
