@@ -17,6 +17,23 @@ async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, b
   }
 }
 
+// Most PMs never fill in "your email" under Settings — as of this fix, 31/33
+// profiles had it blank, and 13 of those also had no push token registered,
+// meaning a confirmed booking generated zero outbound notification for them
+// (only an in-app row nobody was looking at). Every PM has a login email
+// though, so fall back to that rather than silently skipping the send.
+async function resolvePmEmail(supabase: any, profileId: string, pmEmail?: string | null): Promise<string | null> {
+  if (pmEmail) return pmEmail
+  try {
+    const { data, error } = await supabase.auth.admin.getUserById(profileId)
+    if (error) throw error
+    return data?.user?.email ?? null
+  } catch (err) {
+    console.error('[webhook] auth email fallback lookup failed:', err)
+    return null
+  }
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const params = new URLSearchParams(body)
@@ -219,10 +236,13 @@ export async function POST(request: NextRequest) {
       pushTitle: '📅 Inspection booked',
       message: `${homeowner.name} confirmed ${proposedStr} at ${homeowner.address}. Call them at ${homeowner.phone}.`,
     })
-    if (profile?.pm_email) {
+    const confirmEmailTo = await resolvePmEmail(supabase, profile?.id, profile?.pm_email)
+    if (confirmEmailTo) {
       try {
-        await sendPmConfirmationEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${APP_URL}/homeowners/${homeowner.id}`, startISO: pending.proposed_slot ?? undefined, bookingId: pending.id })
+        await sendPmConfirmationEmail({ to: confirmEmailTo, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, proposedTime: proposedStr, confirmUrl: `${APP_URL}/homeowners/${homeowner.id}`, startISO: pending.proposed_slot ?? undefined, bookingId: pending.id })
       } catch (err) { console.error('PM confirmation email failed:', err) }
+    } else {
+      console.error(`[webhook] booking_confirmed for roofer ${homeowner.roofer_id} has no email to notify (no pm_email, no auth email)`)
     }
     await replyHo(`Perfect, you're all set for ${proposedStr}! ${pmFirst} will see you then.`)
     return new NextResponse('', { status: 200 })
@@ -249,10 +269,13 @@ export async function POST(request: NextRequest) {
     pushTitle: '📞 Call to reschedule',
     message: `${homeowner.name} couldn't confirm ${proposedStr} — give them a call to lock in a time. ${homeowner.phone} · ${homeowner.address}`,
   })
-  if (profile?.pm_email) {
+  const callEmailTo = await resolvePmEmail(supabase, profile?.id, profile?.pm_email)
+  if (callEmailTo) {
     try {
-      await sendPmCallEmail({ to: profile.pm_email, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'needs a quick call to pick a time' })
+      await sendPmCallEmail({ to: callEmailTo, pmName, homeownerName: homeowner.name, homeownerPhone: homeowner.phone, homeownerAddress: homeowner.address, availability: 'needs a quick call to pick a time' })
     } catch (err) { console.error('PM call email failed:', err) }
+  } else {
+    console.error(`[webhook] call_needed for roofer ${homeowner.roofer_id} has no email to notify (no pm_email, no auth email)`)
   }
   await replyHo(`Thanks ${hoFirst}! ${pmFirst} will give you a quick call to find a time that works.`)
   return new NextResponse('', { status: 200 })
