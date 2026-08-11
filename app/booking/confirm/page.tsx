@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
 import { verifyBookingToken } from '@/app/_lib/booking-token'
+import { zipTimezone } from '@/app/_lib/timezone'
 import ConfirmForm from './ConfirmForm'
 
 export const dynamic = 'force-dynamic'
@@ -19,7 +20,7 @@ export default async function ConfirmPage({
   const supabase = await createServiceClient()
   const { data: pending } = await supabase
     .from('pending_bookings')
-    .select('id, status, proposed_slot, homeowners(name, address, phone)')
+    .select('id, status, proposed_slot, homeowners(name, address, phone, zip_code)')
     .eq('id', verified.pendingId)
     .maybeSingle()
 
@@ -31,7 +32,8 @@ export default async function ConfirmPage({
   const homeowner = Array.isArray(pending.homeowners) ? pending.homeowners[0] : pending.homeowners
   const proposed = new Date(pending.proposed_slot)
   const dateStr = proposed.toLocaleDateString('en-US', {
-    timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: zipTimezone(homeowner?.zip_code).tz,
+    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 
   return (

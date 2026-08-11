@@ -128,13 +128,59 @@ export function stateTimezone(state: string | null | undefined): TzResolution {
   return { tz: hit.tz, confident: !hit.split }
 }
 
+/** Every zone this module can resolve to. Used to validate an explicitly stored
+ *  setting, so a typo lands on the fallback instead of throwing inside Intl. */
+const KNOWN_ZONES = new Set<string>([
+  ...ZIP3_RANGES.map(r => r.tz),
+  ...Object.values(STATE_TZ).map(s => s.tz),
+  FALLBACK_TZ,
+])
+
 /**
  * The roofer's own timezone, for slot math and for anything shown to them.
- * Their billing state is captured at signup, so a contractor who signs up in
- * Texas gets Texas hours without being asked.
+ *
+ * This used to read `profile.billing_state`, which sounds like a US state but is
+ * the Stripe subscription status ('active' | 'past_due' | 'canceled') — the only
+ * thing that ever writes it is the Stripe webhook. Every lookup missed and every
+ * roofer silently resolved to the Mountain fallback, so from March to November
+ * (Denver on DST, Phoenix never) every offered slot read one hour later than the
+ * instant actually stored. There is no state column on profiles at all, so we
+ * take the signal we do hold: the ZIP of the homeowner being scheduled, or the
+ * roofer's homeowners in aggregate via `timezoneFromZips`.
+ *
+ * `profile.timezone` is honored first so an explicit per-roofer setting can be
+ * added later without touching callers.
  */
-export function rooferTimezone(profile: { billing_state?: string | null } | null | undefined): string {
-  return stateTimezone(profile?.billing_state).tz
+export function rooferTimezone(
+  profile: { timezone?: string | null } | null | undefined,
+  fallbackZip?: string | null,
+): string {
+  const explicit = profile?.timezone?.trim()
+  if (explicit && KNOWN_ZONES.has(explicit)) return explicit
+  return zipTimezone(fallbackZip).tz
+}
+
+/**
+ * One stable zone for a roofer, from the ZIPs of every homeowner they hold.
+ * The slot grid has to be stable per roofer — deriving it from whichever
+ * homeowner is being texted would shift a roofer's working hours mid-run if
+ * their book ever straddles a timezone line. Most common zone wins; ties break
+ * on first appearance, which keeps the result deterministic across runs.
+ */
+export function timezoneFromZips(zips: Iterable<string | null | undefined>): string {
+  const counts = new Map<string, number>()
+  for (const zip of zips) {
+    const digits = String(zip ?? '').replace(/\D/g, '')
+    if (digits.length < 3) continue
+    const { tz } = zipTimezone(digits)
+    counts.set(tz, (counts.get(tz) ?? 0) + 1)
+  }
+  let best: string | null = null
+  let bestCount = 0
+  for (const [tz, n] of counts) {
+    if (n > bestCount) { best = tz; bestCount = n }
+  }
+  return best ?? FALLBACK_TZ
 }
 
 /** Offset of `tz` from UTC at a given instant, in ms. Positive east of UTC. DST aware. */

@@ -71,9 +71,11 @@ export const DEFAULT_MARKET: Market = {
 // ever right because Arizona has no DST. A roofer in Texas would have been booked
 // an hour off for half the year. Callers now pass their own zone; the offset is
 // resolved per instant, so DST transitions are handled.
-export const DEFAULT_TZ = 'America/Phoenix'
-
-export function formatSlot(slot: Date, tz: string = DEFAULT_TZ): string {
+// No default zone. A default here is silently wrong for anyone it doesn't
+// describe, and a caller that forgets to pass one produces a plausible time
+// rather than an error — which is exactly how the offer text and the
+// confirmation text drifted an hour apart.
+export function formatSlot(slot: Date, tz: string): string {
   const now = new Date()
   const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
   const dayKey = (d: Date) => d.toLocaleDateString('en-US', { timeZone: tz })
@@ -94,7 +96,7 @@ export async function getNextAvailableSlot(
   supabase: SupabaseClient,
   market: Market,
   roofer_id: string,
-  tz: string = DEFAULT_TZ
+  tz: string
 ): Promise<Date> {
   const toLocal = (d: Date) => toWallClock(d, tz)
   const fromLocal = (d: Date) => fromWallClock(d, tz)

@@ -3,7 +3,7 @@ import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
-import { rooferTimezone } from '@/app/_lib/timezone'
+import { rooferTimezone, timezoneFromZips } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
 
   const { data: activeHomeowners } = await supabase
     .from('homeowners')
-    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style, billing_state)')
+    .select('*, profiles(id, pm_name, company_name, sms_count_this_month, sms_cap, subscription_status, message_style)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', true)
     .eq('monitor_only', false)
@@ -313,6 +313,22 @@ export async function POST(request: NextRequest) {
     .eq('monitor_only', false)
     .eq('is_test', false)
     .limit(10000)
+
+  // One zone per roofer, resolved from the ZIPs of every homeowner they hold, so
+  // the slot grid below can't shift between homeowners inside a single run.
+  // Built from all three lists because they partition the roofer's real book.
+  const zipsByRoofer = new Map<string, string[]>()
+  for (const h of [
+    ...((monitorOnlyHomeowners ?? []) as any[]),
+    ...((activeHomeowners ?? []) as any[]),
+    ...((unconfirmedHomeowners ?? []) as any[]),
+  ]) {
+    const list = zipsByRoofer.get(h.roofer_id) ?? []
+    list.push(h.zip_code)
+    zipsByRoofer.set(h.roofer_id, list)
+  }
+  const rooferTzCache: Record<string, string> = {}
+  for (const [rooferId, zips] of zipsByRoofer) rooferTzCache[rooferId] = timezoneFromZips(zips)
 
   // Geocache all unique ZIPs in one batch for monitor-only, active, and unconfirmed homeowners
   const allZips = [...new Set([
@@ -494,9 +510,10 @@ export async function POST(request: NextRequest) {
     const effectiveMarket =
       (await getMarketById(supabase, homeowner.market_id)) ?? (await getRooferSchedule(supabase, profile.id))
     // Working hours are the roofer's, so slot math runs in the roofer's zone,
-    // derived from the state they signed up in. A Texas contractor's 8-5 is
-    // Central, not Phoenix.
-    const rooferTz = rooferTimezone(profile)
+    // derived from where their homeowners actually are. A Texas contractor's 8-5
+    // is Central, not Phoenix. The same zone formats the time we text out, so the
+    // offer can never name an hour the stored slot doesn't mean.
+    const rooferTz = rooferTzCache[profile.id] ?? rooferTimezone(profile, homeowner.zip_code)
     const autoSchedule = homeowner.auto_schedule !== false
 
     let message: string

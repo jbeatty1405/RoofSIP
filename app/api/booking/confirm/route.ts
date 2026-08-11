@@ -3,6 +3,7 @@ import { getTwilioClient, buildBookingConfirmationSms } from '@/app/_lib/twilio'
 import { addCalendarEvent } from '@/app/_lib/google'
 import { verifyBookingToken } from '@/app/_lib/booking-token'
 import { decryptToken } from '@/app/_lib/token-crypto'
+import { rooferTimezone } from '@/app/_lib/timezone'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
   const confirmedTime = new Date(pending.proposed_slot)
 
   const dateStr = confirmedTime.toLocaleDateString('en-US', {
-    timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    timeZone: rooferTimezone(profile, homeowner.zip_code),
+    weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit',
   })
 
   let googleEventId: string | undefined

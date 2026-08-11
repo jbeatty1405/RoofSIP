@@ -1,4 +1,5 @@
 import { createClient } from '@/app/_lib/supabase/server'
+import { zipTimezone } from '@/app/_lib/timezone'
 import HaileyBanner from './HaileyBanner'
 import GettingStarted from './GettingStarted'
 import AppStoreBadge from '@/app/_components/AppStoreBadge'
@@ -20,7 +21,7 @@ export default async function DashboardHome() {
     supabase.from('profiles').select('pm_name, company_name, stripe_customer_id, subscription_status').eq('id', user!.id).single(),
     supabase.from('homeowners').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id),
     supabase.from('homeowners').select('*', { count: 'exact', head: true }).eq('roofer_id', user!.id).eq('tcpa_consent', true),
-    supabase.from('pending_bookings').select('id, proposed_slot, homeowners(name, phone, address)').eq('roofer_id', user!.id).eq('status', 'confirmed').gt('proposed_slot', new Date().toISOString()).order('proposed_slot', { ascending: true }).limit(10),
+    supabase.from('pending_bookings').select('id, proposed_slot, homeowners(name, phone, address, zip_code)').eq('roofer_id', user!.id).eq('status', 'confirmed').gt('proposed_slot', new Date().toISOString()).order('proposed_slot', { ascending: true }).limit(10),
     // "Calls needed" is an allowlist, not "everything that isn't a hot lead" —
     // otherwise every new notification type silently lands in the call list.
     supabase.from('notifications').select('id, message, type, created_at, homeowners(name, phone, address)').eq('roofer_id', user!.id).is('dismissed_at', null).eq('type', 'call_needed').order('created_at', { ascending: false }).limit(5),
@@ -94,8 +95,11 @@ export default async function DashboardHome() {
           <div className="flex flex-col gap-3">
             {confirmedBookings!.map((b: any) => {
               const slot = new Date(b.proposed_slot)
-              const dateStr = slot.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
-              const timeStr = slot.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+              // This renders on the server, which runs in UTC — without an explicit
+              // zone the PM was shown a different hour than the homeowner was texted.
+              const tz = zipTimezone(b.homeowners?.zip_code).tz
+              const dateStr = slot.toLocaleDateString('en-US', { timeZone: tz, weekday: 'long', month: 'short', day: 'numeric' })
+              const timeStr = slot.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' })
               return (
                 <div key={b.id} className="bg-zinc-900 rounded-xl border border-green-500/30 p-5">
                   <div className="flex items-start justify-between gap-4">

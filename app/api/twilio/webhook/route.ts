@@ -5,6 +5,7 @@ import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { preClassifyIntent } from '@/app/_lib/ai-sms'
 import { phoneMatchCandidates } from '@/app/_lib/phone'
 import { isQuietHoursForZip } from '@/app/_lib/schedule'
+import { rooferTimezone } from '@/app/_lib/timezone'
 import { APP_URL } from '@/app/_lib/url'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
@@ -209,8 +210,11 @@ export async function POST(request: NextRequest) {
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: msg, direction: 'outbound', status: 'sent', message_type: type })
   }
 
+  // Must resolve the same way the offer did in the weather route, or the
+  // confirmation names a different hour than the text the homeowner said yes to.
+  const slotTz = rooferTimezone(profile, homeowner.zip_code)
   const proposedStr = pending?.proposed_slot
-    ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    ? new Date(pending.proposed_slot).toLocaleDateString('en-US', { timeZone: slotTz, weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : 'a time'
 
   // Only an OPEN offer (a slot we are actively holding for this HO) can be acted on.

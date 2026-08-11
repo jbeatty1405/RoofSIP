@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { zipTimezone, stateTimezone, rooferTimezone, toWallClock, fromWallClock, hourIn } from '@/app/_lib/timezone'
+import { zipTimezone, stateTimezone, rooferTimezone, timezoneFromZips, toWallClock, fromWallClock, hourIn } from '@/app/_lib/timezone'
 import { isQuietHoursForZip, isQuietHoursEverywhere } from '@/app/_lib/schedule'
 
 // The bug this covers: quiet hours were evaluated once in America/Phoenix for
@@ -46,16 +46,71 @@ describe('zipTimezone', () => {
 })
 
 describe('stateTimezone / rooferTimezone', () => {
-  it('reads the state the roofer signed up in', () => {
-    expect(rooferTimezone({ billing_state: 'AZ' })).toBe('America/Phoenix')
-    expect(rooferTimezone({ billing_state: 'tx' })).toBe('America/Chicago')
-    expect(rooferTimezone({ billing_state: 'CA' })).toBe('America/Los_Angeles')
+  // The old version of this suite passed `{ billing_state: 'AZ' }` and went green
+  // for months. Production never holds a state code in that column — it is the
+  // Stripe status — so the test proved the resolver worked on an input the app
+  // could not supply. Everything here uses shapes the app actually produces.
+  it('resolves from the homeowner ZIP being scheduled', () => {
+    expect(rooferTimezone({}, '85614')).toBe('America/Phoenix')
+    expect(rooferTimezone({}, '75001')).toBe('America/Chicago')
+    expect(rooferTimezone({}, '90210')).toBe('America/Los_Angeles')
   })
 
-  it('falls back rather than throwing when the state is missing', () => {
+  it('honors an explicit per-roofer zone over the ZIP', () => {
+    expect(rooferTimezone({ timezone: 'America/New_York' }, '85614')).toBe('America/New_York')
+  })
+
+  it('ignores an unrecognized explicit zone instead of throwing inside Intl', () => {
+    expect(rooferTimezone({ timezone: 'Mars/Olympus' }, '85614')).toBe('America/Phoenix')
+  })
+
+  it('never reads a Stripe billing status as a location', () => {
+    // Every value the Stripe webhook writes, against an Arizona ZIP.
+    for (const status of ['active', 'past_due', 'canceled']) {
+      expect(rooferTimezone({ billing_state: status } as any, '85614')).toBe('America/Phoenix')
+    }
+  })
+
+  it('falls back rather than throwing when nothing is known', () => {
     expect(rooferTimezone(null)).toBe('America/Denver')
-    expect(rooferTimezone({ billing_state: null })).toBe('America/Denver')
+    expect(rooferTimezone({}, null)).toBe('America/Denver')
     expect(stateTimezone('ZZ').confident).toBe(false)
+  })
+})
+
+describe('timezoneFromZips', () => {
+  it('picks one stable zone for a roofer from their whole book', () => {
+    expect(timezoneFromZips(['85614', '85710', '86314'])).toBe('America/Phoenix')
+    expect(timezoneFromZips(['23606', '23601'])).toBe('America/New_York')
+  })
+
+  it('takes the majority zone when a book straddles a line', () => {
+    expect(timezoneFromZips(['85614', '85710', '75001'])).toBe('America/Phoenix')
+  })
+
+  it('ignores junk ZIPs and falls back on an empty book', () => {
+    expect(timezoneFromZips(['', null, undefined, 'ab'])).toBe('America/Denver')
+    expect(timezoneFromZips([])).toBe('America/Denver')
+    expect(timezoneFromZips([null, '85614'])).toBe('America/Phoenix')
+  })
+})
+
+describe('the offer text and the confirmation text agree', () => {
+  // The live failure on 2026-08-10: John Leong was offered "tomorrow at 8:00 AM"
+  // and confirmed into "August 11 at 7:00 AM" for one and the same instant,
+  // because the offer formatted in the Denver fallback and the confirmation
+  // hardcoded Phoenix. Both sides now resolve through rooferTimezone.
+  it('names the same hour on both sides of a Sahuarita booking', () => {
+    const slot = new Date('2026-08-11T14:00:00Z')
+    const zip = '85614'
+    const offerTz = rooferTimezone({}, zip)
+    const confirmTz = rooferTimezone({}, zip)
+    expect(offerTz).toBe(confirmTz)
+
+    const hour = (tz: string) =>
+      slot.toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', hour12: true })
+    expect(hour(offerTz)).toBe('7 AM')
+    expect(hour(confirmTz)).toBe('7 AM')
   })
 })
 
