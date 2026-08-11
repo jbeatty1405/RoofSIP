@@ -41,6 +41,11 @@ export async function proxy(request: NextRequest) {
     // Google Play requires a publicly reachable account-deletion page,
     // so this one must resolve while signed out
     pathname.startsWith('/delete-account') ||
+    // Google Search Console ownership proof for the Play Console org check.
+    // The matcher below only exempts _next/static, so a file in public/ still
+    // runs through this gate and would 307 to /login for Google's crawler.
+    // Search Console requires it to stay reachable AFTER verifying, not just once.
+    pathname.startsWith('/google5ff0ea43ce604a0b.html') ||
     // metadata image routes must stay public so link previews unfurl
     pathname.startsWith('/opengraph-image') ||
     pathname.startsWith('/twitter-image') ||
