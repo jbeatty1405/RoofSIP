@@ -162,12 +162,16 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Deferred intro texts: homeowners added during quiet hours, not yet texted
+  // Deferred intro texts: homeowners added during quiet hours, not yet texted.
+  // monitor_only is excluded: a PM can flip a consented homeowner to watch-only
+  // before the intro ever goes out, and "never text them" has to mean this one too.
+  // The dedup below only catches homeowners who were ALREADY texted.
   const { data: uncontacted } = await supabase
     .from('homeowners')
     .select('*, profiles(pm_name, company_name, subscription_status, sms_cap)')
     .eq('tcpa_consent', true)
     .eq('sms_confirmed', false)
+    .eq('monitor_only', false)
     .eq('is_test', false)
     .limit(10000)
 

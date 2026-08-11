@@ -93,7 +93,7 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-4">
         <h2 className="font-semibold text-zinc-200 mb-1">Texting</h2>
         <p className="text-xs text-zinc-500 mb-3">Whether they get texted or just watched.</p>
-        <MonitoringToggle homeownerId={homeowner.id} initial={!!homeowner.monitor_only} hasPhone={!!homeowner.phone} />
+        <MonitoringToggle homeownerId={homeowner.id} initial={!!homeowner.monitor_only} hasPhone={!!homeowner.phone} hasConsent={!!homeowner.tcpa_consent} />
       </div>
 
       {/* Scheduling — only for consent leads (monitor-only never gets texted) */}
