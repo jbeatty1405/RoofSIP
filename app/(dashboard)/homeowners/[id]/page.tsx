@@ -5,6 +5,7 @@ import DeleteHomeownerButton from './DeleteHomeownerButton'
 import NotesEditor from './NotesEditor'
 import CompleteBookingButton from './CompleteBookingButton'
 import SchedulingToggle from './SchedulingToggle'
+import MonitoringToggle from './MonitoringToggle'
 
 export default async function HomeownerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -86,6 +87,13 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
             <dd className="text-sm text-zinc-300 mt-1">{new Date(homeowner.created_at).toLocaleDateString()}</dd>
           </div>
         </dl>
+      </div>
+
+      {/* Monitoring — texting vs. watch-only */}
+      <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-4">
+        <h2 className="font-semibold text-zinc-200 mb-1">Texting</h2>
+        <p className="text-xs text-zinc-500 mb-3">Whether they get texted or just watched.</p>
+        <MonitoringToggle homeownerId={homeowner.id} initial={!!homeowner.monitor_only} hasPhone={!!homeowner.phone} />
       </div>
 
       {/* Scheduling — only for consent leads (monitor-only never gets texted) */}
