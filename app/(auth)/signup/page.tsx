@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
 import Logo from '@/app/_components/Logo'
+import { getAttribution } from '@/app/_lib/attribution'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -22,11 +23,17 @@ export default function SignupPage() {
     setError('')
 
     const supabase = createClient()
+    // handle_new_user() copies these into the profile row on insert, so
+    // attribution lands in the same write that creates the account.
     const { error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: {
-        data: { pm_name: form.pmName, company_name: form.companyName },
+        data: {
+          pm_name: form.pmName,
+          company_name: form.companyName,
+          ...getAttribution(),
+        },
         emailRedirectTo: `${location.origin}/api/auth/callback`,
       },
     })
@@ -50,7 +57,7 @@ export default function SignupPage() {
           </h2>
           <div className="flex flex-col gap-3">
             {[
-              '$20/month — cancel anytime',
+              '60 days free, no charge today',
               'Set up in under 10 minutes',
               'Works on any phone, any calendar',
             ].map((item, i) => (
@@ -75,8 +82,8 @@ export default function SignupPage() {
             <Logo size="lg" />
           </div>
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-zinc-900">Create account</h1>
-            <p className="text-zinc-500 text-sm mt-1">$20/month after setup</p>
+            <h1 className="text-2xl font-bold text-zinc-900">Start your free trial</h1>
+            <p className="text-zinc-500 text-sm mt-1">60 days free. Cancel anytime.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -137,7 +144,7 @@ export default function SignupPage() {
               disabled={loading}
               className="w-full bg-sky-500 hover:bg-sky-600 text-white py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors mt-1"
             >
-              {loading ? 'Creating account...' : 'Create account'}
+              {loading ? 'Creating account...' : 'Start free trial'}
             </button>
           </form>
 
