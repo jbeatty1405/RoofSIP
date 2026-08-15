@@ -1,5 +1,6 @@
--- Seed the Apple reviewer demo account (apple@roofsip.app) with a clean, realistic
--- data set so the iOS app looks fully functional during review.
+-- Seed realistic sample data for the review demo account (apple@roofsip.app).
+-- App Store Review Guideline 2.1 requires a demo account with full access, so this
+-- gives the reviewer a normal working contractor's data set to evaluate.
 -- Idempotent: wipes this roofer's data first, then inserts a curated set.
 -- All phone numbers are in the fictional 555-01xx range (non-deliverable) so the
 -- weather cron can NEVER text a real person from these rows.
