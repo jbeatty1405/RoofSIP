@@ -10,10 +10,14 @@ export const metadata = {
  *
  * Google Play's User Data policy requires a publicly reachable URL where a user can
  * find out how to delete their account and what happens to their data, without
- * needing to install the app or sign in. In-app deletion already exists
- * (Settings > Account > Delete Account, which POSTs to /api/account/delete) but a
- * signed-in-only route does not satisfy the policy, so this page must stay in
- * `isPublicRoute` in proxy.ts.
+ * needing to install the app or sign in. In-app deletion already exists (mobile
+ * Settings, the muted link under the SUPPORT group, which POSTs to
+ * /api/account/delete) but a signed-in-only route does not satisfy the policy, so
+ * this page must stay in `isPublicRoute` in proxy.ts.
+ *
+ * The steps below must match the mobile app exactly — a reviewer follows them
+ * literally. There is no delete control on the web dashboard, so do not tell
+ * people to sign in here to delete.
  */
 export default function DeleteAccountPage() {
   return (
@@ -29,11 +33,15 @@ export default function DeleteAccountPage() {
             <h2 className="text-white text-lg font-semibold mb-2">Delete it yourself, in the app</h2>
             <p>The fastest way. Deletion is immediate and does not need our help.</p>
             <ol className="list-decimal pl-5 mt-3 space-y-1">
-              <li>Open the RoofSIP app on your phone, or sign in at roofsip.vercel.app</li>
+              <li>Open the RoofSIP app on your phone</li>
               <li>Go to <span className="text-zinc-200">Settings</span></li>
-              <li>Open <span className="text-zinc-200">Account</span></li>
-              <li>Tap <span className="text-zinc-200">Delete Account</span> and confirm</li>
+              <li>Scroll to the bottom and tap <span className="text-zinc-200">Delete account</span></li>
+              <li>Confirm on the warning that appears</li>
             </ol>
+            <p className="mt-3">
+              Account deletion is in the mobile app only. If you do not have the app installed, use
+              the email route below.
+            </p>
           </section>
 
           <section>

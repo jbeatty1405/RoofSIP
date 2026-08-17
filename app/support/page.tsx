@@ -42,7 +42,8 @@ export default function SupportPage() {
               </li>
               <li>
                 <strong className="text-zinc-300">Deleting your account:</strong> Open the app, go to
-                Settings → Delete Account. This permanently removes your account and all associated data.
+                Settings, and tap Delete account at the bottom of the screen. This permanently removes
+                your account and all associated data.
               </li>
               <li>
                 <strong className="text-zinc-300">Data requests:</strong> To access, correct, or delete
