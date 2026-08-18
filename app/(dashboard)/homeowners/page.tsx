@@ -1,5 +1,6 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import Link from 'next/link'
+import PullToRefresh from '@/app/_components/PullToRefresh'
 
 const STATUS_COLOR: Record<string, string> = {
   pending: 'bg-zinc-800 text-zinc-400',
@@ -48,7 +49,7 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
   const optedOut = homeowners?.filter((h: any) => h.tcpa_consent === false && h.tcpa_consent_at) ?? []
 
   return (
-    <div>
+    <PullToRefresh>
       {params.deferred && (
         <div className="mb-6 bg-sky-500/10 border border-sky-500/30 rounded-lg px-4 py-3 text-sm text-sky-400">
           Homeowner added — it's outside sending hours, so their opt-in text will go out automatically this morning.
@@ -180,6 +181,6 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
           </div>
         </div>
       )}
-    </div>
+    </PullToRefresh>
   )
 }
