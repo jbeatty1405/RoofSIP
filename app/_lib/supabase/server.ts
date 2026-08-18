@@ -1,12 +1,30 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\s/g, '')
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.replace(/\s/g, '')
+/**
+ * Read at call time, not at module load.
+ *
+ * These used to be module-level constants with a `!` on them, which meant the
+ * mere act of importing this file threw `Cannot read properties of undefined
+ * (reading 'replace')` when a var was missing. Next collects page data by
+ * importing every route, so that killed the whole build — with no variable
+ * name in the message — and it is why every preview deploy has failed since
+ * previews were first opened: Preview has none of these vars set, only
+ * Production does. Reading lazily lets a build succeed without secrets and
+ * moves the failure to the request that actually needs one, by name.
+ *
+ * The whitespace strip stays: JWTs pasted into dashboards carry hidden \n,
+ * which breaks SSR auth.
+ */
+function env(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`Missing required environment variable: ${name}`)
+  return value.replace(/\s/g, '')
+}
 
 export async function createClient() {
   const cookieStore = await cookies()
-  return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  return createServerClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('NEXT_PUBLIC_SUPABASE_ANON_KEY'), {
     cookies: {
       getAll() { return cookieStore.getAll() },
       setAll(cookiesToSet) {
@@ -31,7 +49,7 @@ export async function createClient() {
  */
 export async function createServiceClient() {
   const cookieStore = await cookies()
-  return createServerClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''), {
+  return createServerClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
     cookies: {
       getAll() { return cookieStore.getAll() },
       setAll(cookiesToSet) {
@@ -57,7 +75,7 @@ export async function createServiceClient() {
  * auth — establish who the caller is with createClient() first.
  */
 export function createAdminClient() {
-  return createServerClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!.replace(/\s/g, ''), {
+  return createServerClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
     cookies: {
       getAll() { return [] },
       setAll() {},
