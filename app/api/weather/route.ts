@@ -6,6 +6,7 @@ import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
 import { rooferTimezone, timezoneFromZips } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
+import { alreadyNotifiedIds } from '@/app/_lib/follow-ups'
 import { checkRateLimit } from '@/app/_lib/rate-limit'
 import { bumpSmsCount, PER_ACCOUNT_HARD_CEILING } from '@/app/_lib/sms-meter'
 import { NextRequest, NextResponse } from 'next/server'
@@ -236,7 +237,7 @@ export async function POST(request: NextRequest) {
     .eq('sms_confirmed', true)
     .limit(10000)
 
-  type FollowUp = { roofer_id: string; homeowner_id: string; name: string; phone: string }
+  type FollowUp = { roofer_id: string; homeowner_id: string; name: string; phone: string; alertTime: string }
   const pendingFollowUps: FollowUp[] = []
 
   if ((optedInHomeowners ?? []).length > 0) {
@@ -282,7 +283,7 @@ export async function POST(request: NextRequest) {
         if (!alertTime) continue
         if ((inboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
         if ((outboundByHomeowner.get(h.id) ?? []).some(t => t > alertTime)) continue
-        pendingFollowUps.push({ roofer_id: h.roofer_id, homeowner_id: h.id, name: h.name, phone: h.phone })
+        pendingFollowUps.push({ roofer_id: h.roofer_id, homeowner_id: h.id, name: h.name, phone: h.phone, alertTime })
       }
     }
   }
@@ -619,10 +620,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // One call_needed per storm alert, not one per run. See alreadyNotifiedIds.
+  let alreadyNotified = new Set<string>()
+  if (pendingFollowUps.length > 0) {
+    const { data: priorCallNeeded } = await supabase
+      .from('notifications')
+      .select('homeowner_id, created_at')
+      .in('homeowner_id', pendingFollowUps.map(fu => fu.homeowner_id))
+      .eq('type', 'call_needed')
+      .gte('created_at', followUpStart)
+
+    alreadyNotified = alreadyNotifiedIds(pendingFollowUps, priorCallNeeded ?? [])
+  }
+
   // Process follow-ups now that we know who got a fresh storm alert this run.
   // Skip any homeowner who just received a new storm alert — it supersedes the follow-up.
   for (const fu of pendingFollowUps) {
     if (stormAlertedThisRun.has(fu.homeowner_id)) continue
+    if (alreadyNotified.has(fu.homeowner_id)) continue
     await supabase.from('notifications').insert({
       roofer_id: fu.roofer_id,
       homeowner_id: fu.homeowner_id,
