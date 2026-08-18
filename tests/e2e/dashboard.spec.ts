@@ -13,9 +13,12 @@ test.describe('Contractor Dashboard', () => {
     await page.waitForURL(/\/dashboard/, { timeout: 12000 })
   })
 
-  test('dashboard shows 4 stat cards', async ({ page }) => {
+  // Two cards, not four: "Rebuild dashboard around PM workflow" (f07956e, 2026-05-20)
+  // dropped the "Inspections this month" and market cards. This test still asserted
+  // the old copy and has failed since that day.
+  test('dashboard shows the stat cards', async ({ page }) => {
     await expect(page.getByText('Homeowners').first()).toBeVisible()
-    await expect(page.getByText(/inspections this month/i).first()).toBeVisible()
+    await expect(page.getByText(/opt-in rate/i).first()).toBeVisible()
     await expect(page.getByText(/opted in/i).first()).toBeVisible()
   })
 
