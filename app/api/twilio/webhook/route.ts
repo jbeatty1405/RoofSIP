@@ -181,10 +181,21 @@ export async function POST(request: NextRequest) {
   // only someone who had a prior relationship; a bare START from a number that
   // never consented is not express consent, so it falls through to the normal
   // flow rather than silently switching texting on.
-  if (isOptBackInMessage(messageBody) && !homeowner.tcpa_consent && (homeowner.tcpa_consent_at || homeowner.sms_confirmed)) {
+  //
+  // opted_out_at is the strongest evidence of that relationship and is checked
+  // first: a monitor-only homeowner has no consent date and no confirmation, so
+  // the two proxies below both miss them — they opted out, got told "Reply START
+  // to opt back in", and START did nothing. The stamp is what they have.
+  //
+  // sms_confirmed is set here because START is express opt-in from the homeowner
+  // themselves, exactly like the YES branch. Without it the reply "You're back
+  // on!" would be a lie: they'd sit consented-but-unconfirmed, and the intro-text
+  // dedup (which sees the opt-out confirmation we already sent) would never text
+  // them again.
+  if (isOptBackInMessage(messageBody) && !homeowner.tcpa_consent && (homeowner.opted_out_at || homeowner.tcpa_consent_at || homeowner.sms_confirmed)) {
     await supabase
       .from('homeowners')
-      .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString(), monitor_only: false })
+      .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString(), monitor_only: false, sms_confirmed: true })
       .eq('id', homeowner.id)
     // Coming back on clears the opt-out record, or they'd stay branded as
     // "do not text" while consent says otherwise.
