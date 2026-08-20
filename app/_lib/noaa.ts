@@ -46,6 +46,61 @@ export async function geocodeZip(zip: string): Promise<{ lat: string; lon: strin
   return null
 }
 
+/**
+ * Highest wind speed in mph stated in an alert's text, or 0 if it states none.
+ *
+ * Anchored on the words wind/gust because dust alerts also carry the speed the
+ * storm cell is TRAVELLING at — "moving northwest at 10 mph" — and a bare
+ * /(\d+) mph/ reads that as a 10 mph wind and suppresses a genuine haboob. The
+ * gap is capped at 24 characters and the class excludes digits and punctuation,
+ * so a match cannot wander across a sentence ("wind driven dust moving
+ * northwest at 10 mph" is 33 characters from 'wind' to the number, so it is
+ * correctly ignored).
+ *
+ * Ranges take the top of the range: "gusts of 45-55 mph" is a 55 mph event.
+ */
+export function statedWindMph(text: string): number {
+  // NWS hard-wraps descriptions, so the number often sits on the next line
+  // ("strong wind in excess of\n50 mph"). Collapse whitespace first or the
+  // character class below stops at the newline and every speed reads as unstated.
+  const flat = text.replace(/\s+/g, ' ')
+  const re = /\b(?:wind|gust)s?\b[a-z ]{0,24}?(\d{2,3})(?:\s*-\s*(\d{2,3}))?\s*mph/gi
+  let best = 0
+  for (const m of flat.matchAll(re)) {
+    best = Math.max(best, parseInt(m[2] ?? m[1], 10))
+  }
+  return best
+}
+
+/** Wind at or above this damages a roof. Dust events only — see the note below. */
+const DUST_WIND_FLOOR_MPH = 40
+
+/**
+ * Should a blowing-dust event raise a lead?
+ *
+ * The NWS product name is a poor proxy for wind here, which is why this is not
+ * left to the keyword list. Sampling every AZ dust alert in Aug 2026: the two
+ * windiest events (45-55 mph gusts) were Blowing Dust ADVISORIES, while three
+ * Dust Storm WARNINGS stated no wind speed at all. Going on the label alone both
+ * missed the strongest events and fired on unquantified weaker ones.
+ *
+ * So: trust a stated wind speed when there is one, and fall back to the label
+ * only when there is not. Only 3 of 14 alerts that month stated a speed, so the
+ * fallback carries most of the traffic. A Dust Storm Warning requires visibility
+ * under a quarter mile, which NWS only issues for the severe end, so an
+ * unquantified one is kept; an unquantified advisory is not.
+ *
+ * 40 mph matches the bar Wind Advisories already clear. Justin's standing rule
+ * is NO mph floor on wind alerts (High Wind / Wind Advisory / Extreme Wind all
+ * pass unconditionally) and this does not change that — the floor here applies
+ * to dust events only. Chosen 2026-08-19 against real alert data.
+ */
+function dustEventQualifies(event: string, text: string): boolean {
+  const wind = statedWindMph(text)
+  if (wind > 0) return wind >= DUST_WIND_FLOOR_MPH
+  return event.includes('warning')
+}
+
 export async function getAlertsForPoint(lat: string, lon: string): Promise<WeatherAlert[]> {
   try {
     const res = await fetch(
@@ -88,6 +143,17 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         // single metro-wide Flood Watch. Match roof-damaging event names instead.
         const nonRoof = ['chill', 'heat', 'freeze', 'frost', 'cold', 'flood', 'fog', 'air quality']
         if (nonRoof.some(k => event.includes(k))) return false
+
+        // Dust is decided on wind speed, not on the product name. This must sit
+        // ahead of the keyword list below: 'Dust Storm Warning' contains 'storm'
+        // and would otherwise pass unconditionally, and 'Blowing Dust Advisory'
+        // contains no listed keyword at all so it could never pass, which is
+        // backwards — the advisories are frequently the windier of the two.
+        if (event.includes('dust')) {
+          const text = `${f.properties?.description ?? ''} ${f.properties?.headline ?? ''}`
+          return dustEventQualifies(event, text)
+        }
+
         return (
           event.includes('thunder') || // Severe Thunderstorm Warning (hail + damaging wind)
           event.includes('hail') ||

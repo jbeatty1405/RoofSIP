@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { getAlertsForPoint } from '@/app/_lib/noaa'
+import { getAlertsForPoint, statedWindMph } from '@/app/_lib/noaa'
 import { localDateKey } from '@/app/_lib/timezone'
 
 // Shapes a fake api.weather.gov /alerts/active response around one alert, with
@@ -65,17 +65,46 @@ describe('getAlertsForPoint — watch vs warning', () => {
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
-  it('keeps a Dust Storm Warning (haboob)', async () => {
-    mockAlerts(alertFeature({ event: 'Dust Storm Warning', certainty: 'Likely', urgency: 'Expected' }))
+  // Dust is judged on stated wind speed, falling back to the product name only
+  // when NWS states no speed. Justin chose the 40 mph floor on 2026-08-19 against
+  // real alert data; it applies to dust ONLY and does not put a floor on wind.
+  const dust = (event: string, description: string) =>
+    alertFeature({ event, description, certainty: 'Likely', urgency: 'Expected' })
+
+  it('keeps a windy Blowing Dust Advisory, which the product name alone would miss', async () => {
+    mockAlerts(dust('Blowing Dust Advisory', 'Strong thunderstorms with organized outflow wind gusts of 45-55 mph.'))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
-  // Pins existing behavior, NOT a consequence of the watch filter: 'Blowing Dust
-  // Advisory' contains none of the allowed keywords (thunder/hail/wind/storm/
-  // tornado/hurricane), so it has always been dropped while 'Dust Storm Warning'
-  // passes on 'storm'. Flagged to Justin 2026-08-19; left as-is pending his call.
-  it('drops a Blowing Dust Advisory (no allowed keyword in the event name)', async () => {
-    mockAlerts(alertFeature({ event: 'Blowing Dust Advisory', certainty: 'Likely', urgency: 'Expected' }))
+  it('drops a Blowing Dust Advisory that states no wind', async () => {
+    mockAlerts(dust('Blowing Dust Advisory', 'Blowing dust reducing visibility.'))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('keeps a Dust Storm Warning that states no wind (visibility under 1/4 mile)', async () => {
+    mockAlerts(dust('Dust Storm Warning', 'A dust storm was located near Flowing Wells.'))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+  })
+
+  it('drops a dust event whose stated wind is below the floor', async () => {
+    mockAlerts(dust('Dust Storm Warning', 'Blowing dust with wind of 30 mph.'))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('reads the top of a range and survives the NWS line wrap', async () => {
+    // NWS hard-wraps descriptions, so the number often lands on the next line.
+    mockAlerts(dust('Blowing Dust Advisory', 'Less than a quarter mile visibility with strong wind in excess of\n50 mph.'))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+  })
+
+  // The trap a bare /(\d+) mph/ falls into: dust alerts state how fast the cell
+  // is TRAVELLING, and reading that as wind suppresses a genuine haboob.
+  it('does not mistake storm movement speed for wind speed', async () => {
+    mockAlerts(dust('Dust Storm Warning', 'A dust storm was moving northwest at 10 mph.'))
+    // Still fires, on the unquantified-warning fallback rather than a 10 mph read.
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+
+    mockAlerts(dust('Blowing Dust Advisory', 'A dust storm was moving northwest at 10 mph.'))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
   })
 
@@ -94,6 +123,28 @@ describe('getAlertsForPoint — watch vs warning', () => {
   it('drops a watch even when certainty and urgency are missing', async () => {
     mockAlerts(alertFeature({ event: 'Severe Thunderstorm Watch', certainty: undefined, urgency: undefined }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+})
+
+describe('statedWindMph', () => {
+  it('reads wind and gust phrasings, taking the top of a range', () => {
+    expect(statedWindMph('strong wind in excess of 50 mph')).toBe(50)
+    expect(statedWindMph('organized outflow wind gusts of 45-55 mph')).toBe(55)
+    expect(statedWindMph('winds up to 60 mph')).toBe(60)
+  })
+
+  it('ignores storm movement speed', () => {
+    expect(statedWindMph('was moving northwest at 10 mph')).toBe(0)
+    expect(statedWindMph('wind driven dust moving northwest at 10 mph')).toBe(0)
+  })
+
+  it('returns 0 when no speed is stated', () => {
+    expect(statedWindMph('Blowing dust reducing visibility.')).toBe(0)
+    expect(statedWindMph('')).toBe(0)
+  })
+
+  it('takes the highest speed when several are stated', () => {
+    expect(statedWindMph('wind of 30 mph, later gusts of 55 mph')).toBe(55)
   })
 })
 
