@@ -79,15 +79,21 @@ export function isOptBackInMessage(body: string | null | undefined): boolean {
 /**
  * Did this homeowner opt out, as opposed to never having consented?
  *
- * Consent false on its own is also the resting state of a CSV import or a
- * monitor-only home, so it can't be the whole test. Having consented or
- * confirmed at some point is what separates "they told us to stop" from
- * "we never had permission in the first place".
+ * opted_out_at is the real answer and is checked first. The fallback below is
+ * kept for two reasons: rows written before that column existed, and any read
+ * path that doesn't select it. It infers an opt-out from consent being false
+ * PLUS evidence of a consent that existed once — because consent false on its
+ * own is also the resting state of a CSV import and of every monitor-only home,
+ * neither of which ever sets tcpa_consent_at. That gap is exactly what
+ * opted_out_at closes: a monitor-only homeowner who texts STOP is invisible to
+ * the fallback and visible to the column.
  */
 export function isOptedOut(h: {
   tcpa_consent?: boolean | null
   tcpa_consent_at?: string | null
   sms_confirmed?: boolean | null
+  opted_out_at?: string | null
 }): boolean {
+  if (h.opted_out_at) return true
   return h.tcpa_consent === false && !!(h.tcpa_consent_at || h.sms_confirmed)
 }

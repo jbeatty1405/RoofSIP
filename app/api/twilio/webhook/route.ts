@@ -131,6 +131,18 @@ export async function POST(request: NextRequest) {
       .update({ tcpa_consent: false, monitor_only: false })
       .in('phone', phoneCandidates)
 
+    // Stamped separately and best-effort, on purpose. Clearing consent above is
+    // the part that must never fail; opted_out_at is the durable record of WHO
+    // asked and WHEN, which is what lets the app label a monitor-only homeowner
+    // (consent already false, nothing else to infer from) as opted out. If the
+    // column isn't there yet the stamp is skipped and the fallback in
+    // app/_lib/opt-out.ts still labels everyone who came through the opt-in flow.
+    const { error: stampErr } = await supabase
+      .from('homeowners')
+      .update({ opted_out_at: new Date().toISOString() })
+      .in('phone', phoneCandidates)
+    if (stampErr) console.error('[webhook] opted_out_at stamp skipped:', stampErr.message)
+
     // CTIA requires one confirmation, and it is the only message that may go to
     // a number that just opted out. If Twilio already registered the opt-out at
     // its end this fails with 21610 — which is the block working, not an error.
@@ -174,6 +186,13 @@ export async function POST(request: NextRequest) {
       .from('homeowners')
       .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString(), monitor_only: false })
       .eq('id', homeowner.id)
+    // Coming back on clears the opt-out record, or they'd stay branded as
+    // "do not text" while consent says otherwise.
+    const { error: clearErr } = await supabase
+      .from('homeowners')
+      .update({ opted_out_at: null })
+      .eq('id', homeowner.id)
+    if (clearErr) console.error('[webhook] opted_out_at clear skipped:', clearErr.message)
     const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
     const back = `You're back on! ${pmFirst} will reach out if we catch storm activity near your home. Msg frequency varies, msg & data rates may apply. Reply HELP for help, STOP to cancel.`
     await sendSms(twilio, fromPhone, back)

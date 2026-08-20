@@ -99,4 +99,17 @@ describe('isOptedOut', () => {
   it('does not flag an active homeowner', () => {
     expect(isOptedOut({ tcpa_consent: true, tcpa_consent_at: '2026-08-14T00:00:00Z', sms_confirmed: true })).toBe(false)
   })
+
+  it('flags a monitor-only homeowner once opted_out_at is stamped', () => {
+    // The case the inferred rule cannot see: a monitor-only home already rests
+    // at consent=false with no consent date, so before this column a STOP from
+    // them was honored but unlabelled.
+    const monitorOnly = { tcpa_consent: false, tcpa_consent_at: null, sms_confirmed: false }
+    expect(isOptedOut(monitorOnly)).toBe(false)
+    expect(isOptedOut({ ...monitorOnly, opted_out_at: '2026-08-20T00:00:45Z' })).toBe(true)
+  })
+
+  it('stops flagging them once they text START and the stamp is cleared', () => {
+    expect(isOptedOut({ tcpa_consent: true, tcpa_consent_at: '2026-08-20T01:00:00Z', sms_confirmed: true, opted_out_at: null })).toBe(false)
+  })
 })
