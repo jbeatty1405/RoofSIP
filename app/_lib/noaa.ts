@@ -57,7 +57,28 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
     return (data.features ?? [])
       .filter((f: any) => {
         const event = (f.properties?.event ?? '').toLowerCase()
-        const severity = (f.properties?.severity ?? '').toLowerCase()
+        const certainty = (f.properties?.certainty ?? '').toLowerCase()
+        const urgency = (f.properties?.urgency ?? '').toLowerCase()
+        // A WATCH is a forecast, not an event: "conditions are favorable somewhere
+        // in these counties over the next several hours". NWS issues them per
+        // multi-county area, so a single Severe Thunderstorm Watch covers the whole
+        // metro and fires "storm just hit" at every homeowner we hold. That is
+        // exactly what happened 2026-08-19: two watches (Gila/Maricopa/Pinal and
+        // Cochise/Graham/Pima/Santa Cruz) produced 197 hot leads and 7 homeowner
+        // texts on a day Maricopa recorded zero Severe Thunderstorm Warnings.
+        //
+        // This is the same failure shape as the 2026-07-15 Flood Watch incident,
+        // through a different door: that fix filtered on the event NOUN (is this
+        // weather roof-damaging?) and never on CERTAINTY (did it actually happen?).
+        // 'Severe Thunderstorm Watch' passes the noun test perfectly.
+        //
+        // Checked three ways because NWS sets all three consistently and any one
+        // alone is a single point of failure. Verified against every AZ alert on
+        // 2026-08-19: watches were the only Possible/Future rows, while warnings
+        // were Observed and advisories (incl. Blowing Dust, and Wind Advisory,
+        // which Justin wants kept broad with no mph floor) were Likely/Expected.
+        if (event.includes('watch')) return false
+        if (certainty === 'possible' || urgency === 'future') return false
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
         // Only trigger on things that actually damage a roof. We deliberately do
@@ -68,7 +89,7 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         const nonRoof = ['chill', 'heat', 'freeze', 'frost', 'cold', 'flood', 'fog', 'air quality']
         if (nonRoof.some(k => event.includes(k))) return false
         return (
-          event.includes('thunder') || // Severe Thunderstorm Warning/Watch (hail + damaging wind)
+          event.includes('thunder') || // Severe Thunderstorm Warning (hail + damaging wind)
           event.includes('hail') ||
           event.includes('wind') || // High Wind / Wind Advisory / Extreme Wind
           event.includes('storm') || // Dust Storm (haboob), Ice/Winter/Tropical Storm

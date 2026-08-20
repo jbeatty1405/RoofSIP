@@ -3,7 +3,7 @@ import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
-import { rooferTimezone, timezoneFromZips } from '@/app/_lib/timezone'
+import { rooferTimezone, timezoneFromZips, zipTimezone, localDateKey } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { alreadyNotifiedIds } from '@/app/_lib/follow-ups'
@@ -35,6 +35,47 @@ async function fetchInChunks(
     if (data) rows.push(...data)
   }
   return { rows, ok: true }
+}
+
+// Which of these homeowners has already had a notification today, judged in each
+// homeowner's OWN local calendar day.
+//
+// This used to be `new Date().toISOString().slice(0, 10)` plus a `gte` on
+// `${today}T00:00:00Z` — the UTC date. UTC midnight is 5pm in Phoenix, so on
+// 2026-08-19 the 3:18pm and 5:54pm MST runs computed different "today"s, the
+// second one couldn't see the first, and every storm lead went out twice (~98
+// duplicated). One bulk read over a wide window, narrowed per-homeowner in JS,
+// gets the boundary right in any US timezone.
+//
+// Returns null when the read fails, which callers must treat as "skip" — a
+// truncated dedup set reads as "nobody has been notified yet" and re-notifies
+// the entire book, which is the exact failure this guard exists to prevent.
+async function notifiedTodaySet(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  homeowners: any[],
+): Promise<Set<string> | null> {
+  const ids = homeowners.map((h: any) => h.id)
+  if (!ids.length) return new Set()
+  // 36h comfortably spans the widest US local day (Hawaii UTC-10 to Puerto Rico UTC-4).
+  const lookback = new Date(Date.now() - 36 * 3600 * 1000).toISOString()
+  const { rows, ok } = await fetchInChunks(ids, (chunk) =>
+    supabase.from('notifications').select('homeowner_id, created_at').in('homeowner_id', chunk).gte('created_at', lookback),
+  )
+  if (!ok) return null
+
+  const tzByHomeowner = new Map<string, string>(
+    homeowners.map((h: any) => [h.id, zipTimezone(h.zip_code).tz]),
+  )
+  const now = new Date()
+  const notified = new Set<string>()
+  for (const row of rows) {
+    const tz = tzByHomeowner.get(row.homeowner_id)
+    if (!tz) continue
+    if (localDateKey(new Date(row.created_at), tz) === localDateKey(now, tz)) {
+      notified.add(row.homeowner_id)
+    }
+  }
+  return notified
 }
 
 function extractHailInches(text: string): number {
@@ -377,13 +418,8 @@ export async function POST(request: NextRequest) {
 
   // Monitor-only: notify PM on storm hit, never text the homeowner
   if (monitorOnlyHomeowners?.length) {
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: monitorNotifiedToday } = await supabase
-      .from('notifications')
-      .select('homeowner_id')
-      .in('homeowner_id', monitorOnlyHomeowners.map((h: any) => h.id))
-      .gte('created_at', `${today}T00:00:00Z`)
-    const monitorNotifiedSet = new Set(monitorNotifiedToday?.map((n: any) => n.homeowner_id))
+    const monitorNotifiedSet = await notifiedTodaySet(supabase, monitorOnlyHomeowners as any[])
+    if (!monitorNotifiedSet) return NextResponse.json({ skipped: true, reason: 'monitor_dedup_read_failed' })
 
     for (const h of monitorOnlyHomeowners as any[]) {
       const profile = h.profiles
@@ -403,13 +439,8 @@ export async function POST(request: NextRequest) {
   // Opt-in non-responders: storm hit, but they never replied YES. Don't text them —
   // hand the PM a hot lead to call personally. Same once-per-day dedup as monitor-only.
   if (unconfirmedHomeowners?.length) {
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: unconfirmedNotifiedToday } = await supabase
-      .from('notifications')
-      .select('homeowner_id')
-      .in('homeowner_id', unconfirmedHomeowners.map((h: any) => h.id))
-      .gte('created_at', `${today}T00:00:00Z`)
-    const unconfirmedNotifiedSet = new Set(unconfirmedNotifiedToday?.map((n: any) => n.homeowner_id))
+    const unconfirmedNotifiedSet = await notifiedTodaySet(supabase, unconfirmedHomeowners as any[])
+    if (!unconfirmedNotifiedSet) return NextResponse.json({ skipped: true, reason: 'unconfirmed_dedup_read_failed' })
 
     for (const h of unconfirmedHomeowners as any[]) {
       const profile = h.profiles

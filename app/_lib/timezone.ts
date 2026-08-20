@@ -197,6 +197,24 @@ export function tzOffsetMs(tz: string, at: Date): number {
   return asUTC - at.getTime()
 }
 
+/**
+ * The calendar date in `tz` as YYYY-MM-DD, for "have we already done this today?"
+ * checks.
+ *
+ * Do NOT reach for `new Date().toISOString().slice(0, 10)` here. That is the UTC
+ * date, and UTC midnight is 5pm in Phoenix, so a "once per day" guard built on it
+ * rolls over mid-afternoon and lets the same work fire a second time before the
+ * day is out. That is precisely what happened to the storm-lead dedup on
+ * 2026-08-19: runs at 3:18pm and 5:54pm MST landed on opposite sides of the UTC
+ * boundary and re-notified the whole book, ~98 leads twice.
+ */
+export function localDateKey(at: Date, tz: string): string {
+  // en-CA formats as YYYY-MM-DD, which sorts and compares as a plain string.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(at)
+}
+
 /** The hour of day (0-23) in `tz` right now, or at `at`. */
 export function hourIn(tz: string, at: Date = new Date()): number {
   const h = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false }).format(at)
