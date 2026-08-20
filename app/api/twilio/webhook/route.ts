@@ -4,17 +4,20 @@ import { notifyRoofer } from '@/app/_lib/notify'
 import { sendPmConfirmationEmail, sendPmCallEmail } from '@/app/_lib/email'
 import { preClassifyIntent } from '@/app/_lib/ai-sms'
 import { phoneMatchCandidates } from '@/app/_lib/phone'
+import { isOptOutMessage, isOptBackInMessage } from '@/app/_lib/opt-out'
 import { isQuietHoursForZip } from '@/app/_lib/schedule'
 import { rooferTimezone } from '@/app/_lib/timezone'
 import { APP_URL } from '@/app/_lib/url'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateRequest } from 'twilio'
 
-async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string) {
+async function sendSms(twilio: ReturnType<typeof getTwilioClient>, to: string, body: string): Promise<{ ok: boolean; code?: number }> {
   try {
     await twilio.messages.create({ body, messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID!, to })
-  } catch (err) {
+    return { ok: true }
+  } catch (err: any) {
     console.error(`SMS send failed to ${to}:`, err)
+    return { ok: false, code: err?.code }
   }
 }
 
@@ -108,6 +111,76 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
   if (!inboundLog) return new NextResponse('', { status: 200 })
 
+  // ── OPT-OUT ───────────────────────────────────────────────────────────────
+  // Runs before every other branch, in any state, ignoring quiet hours. It has
+  // to outrank the booking logic: a homeowner who wrote "stop texting me" while
+  // holding an open appointment offer used to fall through to the reschedule
+  // path, which texted them again and handed the PM a call task.
+  if (isOptOutMessage(messageBody)) {
+    // STOP is per-person, not per-roofer: one number can sit in two PMs' books,
+    // and consent is the homeowner's to withdraw everywhere at once (TCPA).
+    // monitor_only is cleared too — the storm run's monitor-only list is the one
+    // query that doesn't gate on consent, and it still generates PM call leads.
+    const { data: affected } = await supabase
+      .from('homeowners')
+      .select('id, name, phone, roofer_id')
+      .in('phone', phoneCandidates)
+
+    await supabase
+      .from('homeowners')
+      .update({ tcpa_consent: false, monitor_only: false })
+      .in('phone', phoneCandidates)
+
+    // CTIA requires one confirmation, and it is the only message that may go to
+    // a number that just opted out. If Twilio already registered the opt-out at
+    // its end this fails with 21610 — which is the block working, not an error.
+    const confirmation = `You're unsubscribed from RoofSIP roof storm alerts. You won't get any more texts from us. Reply START to opt back in.`
+    const sent = await sendSms(twilio, fromPhone, confirmation)
+    await supabase.from('sms_logs').insert({
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      message: confirmation,
+      direction: 'outbound',
+      status: sent.ok ? 'sent' : sent.code === 21610 ? 'blocked_opted_out' : 'failed',
+      message_type: 'opt_out_confirmation',
+    })
+
+    // Tell every PM who holds this number. Without this the PM got no signal at
+    // all — the homeowner went quiet and nothing in the app said why.
+    const notified = new Set<string>()
+    for (const h of (affected ?? []) as any[]) {
+      if (notified.has(h.roofer_id)) continue
+      notified.add(h.roofer_id)
+      await notifyRoofer(supabase, {
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        // Not hot_lead and not call_needed — an opt-out is the one thing that is
+        // explicitly NOT a task. Typing it either way would put a person who
+        // just said stop at the top of the PM's call list.
+        type: 'opted_out',
+        pushTitle: '🚫 Opted out',
+        message: `${h.name} replied STOP. They're off all texts now — no more storm alerts to ${h.phone}. Nothing to do here.`,
+      })
+    }
+    return new NextResponse('', { status: 200 })
+  }
+
+  // START/UNSTOP — the opt-back-in our confirmation above promises. Restores
+  // only someone who had a prior relationship; a bare START from a number that
+  // never consented is not express consent, so it falls through to the normal
+  // flow rather than silently switching texting on.
+  if (isOptBackInMessage(messageBody) && !homeowner.tcpa_consent && (homeowner.tcpa_consent_at || homeowner.sms_confirmed)) {
+    await supabase
+      .from('homeowners')
+      .update({ tcpa_consent: true, tcpa_consent_at: new Date().toISOString(), monitor_only: false })
+      .eq('id', homeowner.id)
+    const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
+    const back = `You're back on! ${pmFirst} will reach out if we catch storm activity near your home. Msg frequency varies, msg & data rates may apply. Reply HELP for help, STOP to cancel.`
+    await sendSms(twilio, fromPhone, back)
+    await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: back, direction: 'outbound', status: 'sent', message_type: 'opt_in_confirmation' })
+    return new NextResponse('', { status: 200 })
+  }
+
   // HELP keyword — CTIA-required informational response, answered in any state/quiet hours
   if (['help', 'info'].includes(messageLower)) {
     const help = `RoofSIP: free roof storm alerts & inspection scheduling. Msg frequency varies; msg & data rates may apply. Reply STOP to cancel. Help: azroofsip@gmail.com`
@@ -119,7 +192,10 @@ export async function POST(request: NextRequest) {
   // Pre-opt-in: handle consent flow — always respond regardless of quiet hours
   if (!homeowner.sms_confirmed) {
     const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
-    const isOptOut = ['stop', 'no', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)
+    // Every real opt-out keyword is already handled above; what's left here is a
+    // plain "no" to the invite, which only reads as a refusal before opt-in.
+    // (After opt-in, "no" is a homeowner declining one proposed time slot.)
+    const isDecline = ['no', 'nope', 'no thanks', 'not interested'].includes(messageLower)
 
     if (isOptIn) {
       // A YES is the homeowner opting in themselves, so it clears monitor_only and
@@ -153,8 +229,8 @@ export async function POST(request: NextRequest) {
     }
 
     let reply: string
-    if (isOptOut) {
-      await supabase.from('homeowners').update({ tcpa_consent: false }).in('phone', phoneCandidates) // STOP opts out every record with this number, across all roofers (TCPA)
+    if (isDecline) {
+      await supabase.from('homeowners').update({ tcpa_consent: false }).in('phone', phoneCandidates) // refusing the invite withdraws consent everywhere this number appears (TCPA)
       reply = `Got it! We won't reach out again. Take care.`
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
@@ -163,12 +239,6 @@ export async function POST(request: NextRequest) {
 
     await sendSms(twilio, fromPhone, reply)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: reply, direction: 'outbound', status: 'sent', message_type: 'reply' })
-    return new NextResponse('', { status: 200 })
-  }
-
-  // STOP always wins — TCPA compliance, process regardless of quiet hours
-  if (['stop', 'unsubscribe', 'cancel', 'quit'].includes(messageLower)) {
-    await supabase.from('homeowners').update({ tcpa_consent: false }).in('phone', phoneCandidates) // STOP opts out every record with this number, across all roofers (TCPA)
     return new NextResponse('', { status: 200 })
   }
 

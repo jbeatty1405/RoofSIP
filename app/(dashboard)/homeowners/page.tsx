@@ -1,6 +1,7 @@
 import { createClient } from '@/app/_lib/supabase/server'
 import Link from 'next/link'
 import PullToRefresh from '@/app/_components/PullToRefresh'
+import { isOptedOut } from '@/app/_lib/opt-out'
 
 const STATUS_COLOR: Record<string, string> = {
   pending: 'bg-zinc-800 text-zinc-400',
@@ -45,8 +46,11 @@ export default async function HomeownersPage({ searchParams }: { searchParams: P
     .eq('roofer_id', user!.id)
     .order('created_at', { ascending: false })
 
-  const active = homeowners?.filter((h: any) => h.tcpa_consent !== false || !h.tcpa_consent_at) ?? []
-  const optedOut = homeowners?.filter((h: any) => h.tcpa_consent === false && h.tcpa_consent_at) ?? []
+  // isOptedOut also catches a homeowner who confirmed by texting YES and later
+  // texted STOP — that path never writes tcpa_consent_at, so keying on the date
+  // alone left them sitting in the active list.
+  const active = homeowners?.filter((h: any) => !isOptedOut(h)) ?? []
+  const optedOut = homeowners?.filter((h: any) => isOptedOut(h)) ?? []
 
   return (
     <PullToRefresh>

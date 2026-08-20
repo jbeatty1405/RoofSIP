@@ -262,6 +262,39 @@ async function run() {
   // ──────────────────────────────────────────────────────────
   console.log('\n── UNKNOWN PHONE ──')
 
+  // ──────────────────────────────────────────────────────────
+  console.log('\n── OPT-OUT (sentence forms + the scheduling false positive) ──')
+
+  console.log('\nScenario 12a: confirmed + open offer → "stop texting me"')
+  // The regression: an opt-out written as a sentence fell past the keyword list
+  // into the booking logic, which texted them AGAIN and made a PM call task.
+  await supabase.from('homeowners').update({ sms_confirmed: true, tcpa_consent: true, monitor_only: false }).eq('id', ho.id)
+  await supabase.from('notifications').delete().eq('homeowner_id', ho.id)
+  await setPendingBooking(ho.id, rooferID, 'awaiting_ho_reply')
+  await post('stop texting me')
+  await sleep(3000)
+  await check('tcpa_consent set to false', async () => { const h = await getHomeowner(); return h?.tcpa_consent === false })
+  await check('booking left untouched (no reschedule task)', async () => {
+    const n = await getLatestNotification(ho.id)
+    return n?.type === 'opted_out'
+  })
+  await check('opt-out confirmation logged, not a reschedule text', async () => {
+    const s = await getLatestOutbound(ho.id)
+    return s?.message_type === 'opt_out_confirmation'
+  })
+
+  console.log('\nScenario 12b: opted out → START puts them back on')
+  await post('START')
+  await sleep(3000)
+  await check('tcpa_consent restored', async () => { const h = await getHomeowner(); return h?.tcpa_consent === true })
+
+  console.log('\nScenario 12c: "stop by Tuesday" is scheduling, NOT an opt-out')
+  await supabase.from('homeowners').update({ sms_confirmed: true, tcpa_consent: true }).eq('id', ho.id)
+  await post('sure, have him stop by Tuesday')
+  await sleep(3000)
+  await check('tcpa_consent still true', async () => { const h = await getHomeowner(); return h?.tcpa_consent === true })
+
+  // ──────────────────────────────────────────────────────────
   console.log('\nScenario 12: unknown phone → silent 200')
   const unknownParams: Record<string, string> = {
     From: '+19995550000',

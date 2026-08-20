@@ -36,9 +36,12 @@ export default function NotificationsList({ notifications }: { notifications: No
   const booked = active.filter(n => n.type === 'booking_confirmed')
   // Anything not otherwise classified is a call to make; admin_alert is an owner
   // alert (new subscriber, trial converted) and isn't a lead at all.
+  // opted_out is the one alert that is explicitly NOT a task — leaving it out of
+  // this catch-all keeps someone who just said STOP off the PM's call list.
   const callsNeeded = active.filter(
-    n => !['hot_lead', 'booking_confirmed', 'admin_alert'].includes(n.type),
+    n => !['hot_lead', 'booking_confirmed', 'admin_alert', 'opted_out'].includes(n.type),
   )
+  const optedOut = active.filter(n => n.type === 'opted_out')
   const allSelected = active.length > 0 && selected.size === active.length
 
   function toggle(id: string) {
@@ -270,6 +273,25 @@ export default function NotificationsList({ notifications }: { notifications: No
                 n={n}
                 accent="border-amber-500/30"
                 badge={{ label: 'Call to schedule', className: 'text-amber-400 bg-amber-500/10' }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {optedOut.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-red-400" />
+            <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider">Opted out</h2>
+          </div>
+          <div className="flex flex-col gap-3">
+            {optedOut.map(n => (
+              <Card
+                key={n.id}
+                n={n}
+                accent="border-red-500/30"
+                badge={{ label: 'Do not text', className: 'text-red-400 bg-red-500/10' }}
               />
             ))}
           </div>

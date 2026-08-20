@@ -19,7 +19,12 @@ import { useState } from 'react'
 // or replied STOP) gets the same consent checkbox the add form uses, and we set
 // tcpa_consent with it. The hourly cron then sends the intro text, respecting their
 // local quiet hours.
-export default function MonitoringToggle({ homeownerId, initial, hasPhone, hasConsent }: { homeownerId: string; initial: boolean; hasPhone: boolean; hasConsent: boolean }) {
+//
+// One case the consent checkbox must NOT cover: a homeowner who texted STOP.
+// Ticking it would re-grant tcpa_consent and drop them back into the storm-alert
+// queue over a withdrawal of consent they made in writing, so that switch is
+// closed here — only they can reopen it, by texting START.
+export default function MonitoringToggle({ homeownerId, initial, hasPhone, hasConsent, optedOut }: { homeownerId: string; initial: boolean; hasPhone: boolean; hasConsent: boolean; optedOut: boolean }) {
   const [monitorOnly, setMonitorOnly] = useState(initial)
   const [consented, setConsented] = useState(hasConsent)
   const [asking, setAsking] = useState(false)
@@ -52,6 +57,7 @@ export default function MonitoringToggle({ homeownerId, initial, hasPhone, hasCo
     if (value) { setAsking(false); setChecked(false); if (!monitorOnly) commit(true, false); return }
     if (!monitorOnly) return
     if (!hasPhone) return
+    if (optedOut) return
     // Already consented (e.g. flipped to watch-only earlier and now coming back) —
     // no need to re-ask.
     if (consented) { commit(false, false); return }
@@ -60,10 +66,14 @@ export default function MonitoringToggle({ homeownerId, initial, hasPhone, hasCo
 
   return (
     <div className="flex flex-col gap-2">
-      <Option label="Actively texting" desc="Gets storm alerts and scheduling texts." active={!monitorOnly} onClick={() => choose(false)} disabled={monitorOnly && !hasPhone} />
+      <Option label="Actively texting" desc="Gets storm alerts and scheduling texts." active={!monitorOnly} onClick={() => choose(false)} disabled={(monitorOnly && !hasPhone) || optedOut} />
       <Option label="Monitor only" desc="Watched for storm activity, but never texted." active={monitorOnly} onClick={() => choose(true)} />
 
-      {monitorOnly && !hasPhone && (
+      {optedOut && (
+        <p className="text-xs text-red-400">They replied STOP, so we can&apos;t text them again. Only they can turn it back on, by texting START to your number. Calling them is still fine.</p>
+      )}
+
+      {monitorOnly && !hasPhone && !optedOut && (
         <p className="text-xs text-zinc-600">No phone number on file, so this one can only be watched.</p>
       )}
 

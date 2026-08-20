@@ -6,6 +6,7 @@ import NotesEditor from './NotesEditor'
 import CompleteBookingButton from './CompleteBookingButton'
 import SchedulingToggle from './SchedulingToggle'
 import MonitoringToggle from './MonitoringToggle'
+import { isOptedOut } from '@/app/_lib/opt-out'
 
 export default async function HomeownerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -77,6 +78,10 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
             <dd className="text-sm text-zinc-300 mt-1">
               {homeowner.tcpa_consent ? (
                 <span className="text-green-400">Opted in · {new Date(homeowner.tcpa_consent_at).toLocaleDateString()}</span>
+              ) : isOptedOut(homeowner) ? (
+                /* "Pending" here read as "hasn't replied yet" on someone who had
+                   actually texted STOP — the two states looked identical. */
+                <span className="text-red-400">Opted out — do not text</span>
               ) : (
                 <span className="text-zinc-500">Pending</span>
               )}
@@ -93,7 +98,7 @@ export default async function HomeownerDetailPage({ params }: { params: Promise<
       <div className="bg-zinc-900 rounded-xl border border-zinc-800 p-5 mb-4">
         <h2 className="font-semibold text-zinc-200 mb-1">Texting</h2>
         <p className="text-xs text-zinc-500 mb-3">Whether they get texted or just watched.</p>
-        <MonitoringToggle homeownerId={homeowner.id} initial={!!homeowner.monitor_only} hasPhone={!!homeowner.phone} hasConsent={!!homeowner.tcpa_consent} />
+        <MonitoringToggle homeownerId={homeowner.id} initial={!!homeowner.monitor_only} hasPhone={!!homeowner.phone} hasConsent={!!homeowner.tcpa_consent} optedOut={isOptedOut(homeowner)} />
       </div>
 
       {/* Scheduling — only for consent leads (monitor-only never gets texted) */}
