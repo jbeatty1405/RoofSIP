@@ -17,18 +17,34 @@ CREATE TABLE profiles (
 );
 
 -- Auto-create profile on signup using data from auth.users metadata
+-- NOTE: search_path MUST be pinned. The auth service calls this trigger with
+-- search_path=auth, so an unqualified `INSERT INTO profiles` resolves to
+-- auth.profiles, fails, and rolls back the whole signup with the opaque
+-- "Database error saving new user". Broke signups 2026-08-07..2026-08-22.
+-- Keep every table reference schema-qualified.
 CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
 BEGIN
-  INSERT INTO profiles (id, pm_name, company_name)
+  INSERT INTO public.profiles (
+    id, pm_name, company_name,
+    signup_source, signup_medium, signup_campaign, signup_gclid
+  )
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'pm_name', ''),
-    NEW.raw_user_meta_data->>'company_name'
+    NEW.raw_user_meta_data->>'company_name',
+    NULLIF(NEW.raw_user_meta_data->>'signup_source', ''),
+    NULLIF(NEW.raw_user_meta_data->>'signup_medium', ''),
+    NULLIF(NEW.raw_user_meta_data->>'signup_campaign', ''),
+    NULLIF(NEW.raw_user_meta_data->>'signup_gclid', '')
   );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
