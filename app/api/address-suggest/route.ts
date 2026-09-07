@@ -1,3 +1,5 @@
+import { createClient } from '@/app/_lib/supabase/server'
+import { isSameOrigin } from '@/app/_lib/csrf'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
@@ -8,6 +10,20 @@ type Suggestion = {
 }
 
 export async function GET(request: NextRequest) {
+  // Every call to Nominatim goes out under RoofSIP's User-Agent, so leaving this
+  // open meant anyone could get that UA rate-limited or banned and take the
+  // address box down for real users. The only caller is the new-homeowner form
+  // in (dashboard), which is already behind login — so requiring a session costs
+  // nothing and closes it outright rather than merely slowing it down.
+  //
+  // Failures answer with an empty array, not an error object: the caller does
+  // `data.length` on whatever comes back, and an object there breaks the dropdown.
+  if (!isSameOrigin(request)) return NextResponse.json([], { status: 403 })
+
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json([], { status: 401 })
+
   const q = request.nextUrl.searchParams.get('q')?.trim()
   if (!q || q.length < 4) return NextResponse.json([])
 
