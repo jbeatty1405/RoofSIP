@@ -327,6 +327,23 @@ export async function POST(request: NextRequest) {
 
   const intent = preClassifyIntent(messageBody)
 
+  // YES after the offered time has already gone by: confirming would book the PM
+  // into the past ("Inspection booked: today 9:00 AM" at noon). Hand it to the PM
+  // to call instead, and tell the homeowner that's what happens.
+  const slotPassed = pending.proposed_slot ? new Date(pending.proposed_slot).getTime() <= Date.now() : false
+  if (intent?.type === 'confirmed' && slotPassed) {
+    await supabase.from('pending_bookings').update({ status: 'pm_calling' }).eq('id', pending.id)
+    await notifyRoofer(supabase, {
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      type: 'call_needed',
+      pushTitle: '📞 Call to schedule',
+      message: `${homeowner.name} said yes to an inspection, but the time we offered (${proposedStr}) already passed. Call them to pick a new time. ${homeowner.phone} · ${homeowner.address}`,
+    })
+    await replyHo(`Thanks, ${hoFirst}! That time already passed, so ${pmFirst} will give you a call to set up a new one.`)
+    return new NextResponse('', { status: 200 })
+  }
+
   // CLEAN YES → confirm the slot we already hold for them. That slot was uniquely
   // reserved at send time, so confirming it can never double-book another homeowner.
   if (intent?.type === 'confirmed') {

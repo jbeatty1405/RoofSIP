@@ -193,3 +193,15 @@ describe('localDateKey', () => {
     expect(localDateKey(at, 'Europe/London')).toBe('2026-08-20')    // 3am
   })
 })
+
+// The storm's end time feeds offer timing: no inspection is offered before it.
+describe('getAlertsForPoint — end time', () => {
+  it('carries NWS ends, falling back to expires', async () => {
+    mockAlerts(
+      alertFeature({ ends: '2026-10-11T17:00:00-07:00', expires: '2026-10-10T03:00:00-07:00' }),
+      alertFeature({ expires: '2026-10-09T10:00:00-07:00' }),
+    )
+    const alerts = await getAlertsForPoint('33.4484', '-112.0740')
+    expect(alerts.map(a => a.ends)).toEqual(['2026-10-11T17:00:00-07:00', '2026-10-09T10:00:00-07:00'])
+  })
+})

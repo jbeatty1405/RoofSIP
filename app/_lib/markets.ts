@@ -92,11 +92,24 @@ function jsToDbDay(jsDay: number): number {
   return jsDay === 0 ? 7 : jsDay
 }
 
+// Same-day offers need a real gap. Before 2026-10-09 the first offer was the
+// next whole hour, so a storm at 8:45am texted "today at 9:00 AM" — 15 minutes
+// out, which no roofer can make. Justin chose same day, 3 hours out.
+export const MIN_LEAD_HOURS = 3
+
+/**
+ * Next open inspection hour for this roofer. The earliest it will offer is the
+ * later of MIN_LEAD_HOURS from now and `notBefore` (the storm's end time), so a
+ * homeowner is never booked onto a roof while the wind advisory is still up.
+ * `now` is injectable for tests.
+ */
 export async function getNextAvailableSlot(
   supabase: SupabaseClient,
   market: Market,
   roofer_id: string,
-  tz: string
+  tz: string,
+  notBefore?: Date | null,
+  now: Date = new Date()
 ): Promise<Date> {
   const toLocal = (d: Date) => toWallClock(d, tz)
   const fromLocal = (d: Date) => fromWallClock(d, tz)
@@ -107,11 +120,13 @@ export async function getNextAvailableSlot(
 
   // Work entirely in the roofer's wall-clock frame so getUTC*/setUTC* below read
   // and write local time; the returned slot is converted back to a real instant.
-  const phxNow = toLocal(new Date())
-  const currentHour = phxNow.getUTCHours()
-  const todayStr = phxNow.toISOString().slice(0, 10)
-  // Storm before 3pm → try same day; at/after 3pm → start from tomorrow
-  const SAME_DAY_CUTOFF = 15
+  let earliestMs = now.getTime() + MIN_LEAD_HOURS * 3600 * 1000
+  if (notBefore && !Number.isNaN(notBefore.getTime())) earliestMs = Math.max(earliestMs, notBefore.getTime())
+  const earliest = toLocal(new Date(earliestMs))
+  const earliestDayStr = earliest.toISOString().slice(0, 10)
+  // Whole hours only: 11:20 rounds up to 12:00, 11:00 stays 11:00.
+  const earliestHour = earliest.getUTCHours() +
+    (earliest.getUTCMinutes() || earliest.getUTCSeconds() || earliest.getUTCMilliseconds() ? 1 : 0)
 
   // Fetch blocked dates
   const { data: blockedDates } = await supabase
@@ -137,11 +152,9 @@ export async function getNextAvailableSlot(
     })
   )
 
-  const d = new Date(phxNow)
-  // Only try same day if storm is before 3pm and there are still slots left today
-  if (currentHour >= SAME_DAY_CUTOFF || currentHour >= lastSlotHour) {
-    d.setUTCDate(d.getUTCDate() + 1)
-  }
+  // Start on the earliest allowed day. If the lead time pushes past the last
+  // working hour, the loop below simply finds nothing that day and rolls on.
+  const d = new Date(earliest)
   d.setUTCHours(0, 0, 0, 0)
 
   for (let i = 0; i < 30; i++) {
@@ -150,8 +163,8 @@ export async function getNextAvailableSlot(
 
     if (market.working_days.includes(dbDay) && !blocked.has(dateStr)) {
       // Try each hour slot from start to last
-      const firstHour = dateStr === todayStr
-        ? Math.max(startHour, currentHour + 1) // same day: start after current hour
+      const firstHour = dateStr === earliestDayStr
+        ? Math.max(startHour, earliestHour) // earliest day: not before the lead time / storm end
         : startHour
 
       for (let h = firstHour; h <= lastSlotHour; h++) {
@@ -168,7 +181,7 @@ export async function getNextAvailableSlot(
   }
 
   // Fallback: next weekday at start hour, in the roofer's zone
-  const fallback = toLocal(new Date())
+  const fallback = new Date(earliest)
   fallback.setUTCDate(fallback.getUTCDate() + 1)
   while ([0, 6].includes(fallback.getUTCDay())) {
     fallback.setUTCDate(fallback.getUTCDate() + 1)
