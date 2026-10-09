@@ -4,6 +4,8 @@ export type WeatherAlert = {
   headline: string
   description: string
   severity: string
+  /** When the weather is expected to be over (NWS `ends`, else `expires`). ISO, or null. */
+  ends?: string | null
 }
 
 // A null return here means "we do not know where this ZIP is", and every caller
@@ -176,6 +178,7 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         headline: f.properties.headline ?? f.properties.event,
         description: f.properties.description ?? '',
         severity: f.properties.severity ?? 'Unknown',
+        ends: f.properties.ends ?? f.properties.expires ?? null,
       }))
   } catch {
     return []

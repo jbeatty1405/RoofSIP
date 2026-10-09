@@ -554,15 +554,29 @@ export async function POST(request: NextRequest) {
 
     let message: string
     let proposedSlot: Date | null = null
+    // The homeowner's booking row as it was before this run touched it. If the
+    // text then fails to send, it goes back exactly as it was: 2026-10-09 two
+    // failed sends left 9am/10am offers "awaiting reply" that the homeowners never
+    // saw, one of them clobbering a lead already handed to the PM to call.
+    let priorBooking: any = null
 
     if (autoSchedule) {
+      const { data: prior } = await supabase.from('pending_bookings')
+        .select('homeowner_id, roofer_id, proposed_slot, slots, status')
+        .eq('homeowner_id', homeowner.id)
+        .maybeSingle()
+      priorBooking = prior ?? null
+      // Never offer a time while the weather is still going: the earliest slot is
+      // after the latest-ending alert for this ZIP (and MIN_LEAD_HOURS from now).
+      const endTimes = alerts.map((a: WeatherAlert) => Date.parse(a.ends ?? '')).filter((t: number) => !Number.isNaN(t))
+      const stormEnd = endTimes.length ? new Date(Math.max(...endTimes)) : null
       // Reserve a unique slot BEFORE sending. The partial unique index on
       // (roofer_id, proposed_slot) makes a racing reservation fail with 23505;
       // on conflict we recompute the next open slot and retry — so two homeowners
       // can never be offered (or booked into) the same time, even across
       // overlapping cron runs.
       for (let attempt = 0; attempt < 6 && !proposedSlot; attempt++) {
-        const slot = await getNextAvailableSlot(supabase, effectiveMarket, profile.id, rooferTz)
+        const slot = await getNextAvailableSlot(supabase, effectiveMarket, profile.id, rooferTz, stormEnd)
         const { error: reserveErr } = await supabase.from('pending_bookings').upsert({
           homeowner_id: homeowner.id,
           roofer_id: homeowner.roofer_id,
@@ -648,6 +662,22 @@ export async function POST(request: NextRequest) {
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)
+      // The homeowner never got the offer, so release the slot we reserved for it.
+      if (proposedSlot) {
+        try {
+          if (priorBooking) {
+            await supabase.from('pending_bookings').update({
+              proposed_slot: priorBooking.proposed_slot,
+              slots: priorBooking.slots,
+              status: priorBooking.status,
+            }).eq('homeowner_id', homeowner.id)
+          } else {
+            await supabase.from('pending_bookings').delete().eq('homeowner_id', homeowner.id)
+          }
+        } catch (restoreErr) {
+          console.error(`slot release failed for ${homeowner.id}:`, restoreErr)
+        }
+      }
     }
   }
 
