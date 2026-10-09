@@ -134,6 +134,13 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         // which Justin wants kept broad with no mph floor) were Likely/Expected.
         if (event.includes('watch')) return false
         if (certainty === 'possible' || urgency === 'future') return false
+        // Not started yet is still a forecast. A Wind Advisory is issued the night
+        // before and /alerts/active returns it immediately, but onset is hours or
+        // days out (2026-10-09: issued Thu night, wind Sun 8am, texts went out
+        // Fri morning saying it already happened). Alerts are for weather that has
+        // actually arrived. Once onset passes, the next poll picks it up.
+        const start = Date.parse(f.properties?.onset ?? f.properties?.effective ?? '')
+        if (!Number.isNaN(start) && start > Date.now()) return false
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
         // Only trigger on things that actually damage a roof. We deliberately do

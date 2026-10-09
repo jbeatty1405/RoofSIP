@@ -65,6 +65,20 @@ describe('getAlertsForPoint — watch vs warning', () => {
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
+  // 2026-10-09: a Wind Advisory issued Thursday night for Sunday 8am went out as
+  // "storm just hit". Alerts are for weather that has arrived, not forecasts.
+  it('drops a Wind Advisory whose onset is in the future', async () => {
+    const onset = new Date(Date.now() + 48 * 3600e3).toISOString()
+    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('keeps a Wind Advisory once its onset has passed', async () => {
+    const onset = new Date(Date.now() - 3600e3).toISOString()
+    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+  })
+
   // Dust is judged on stated wind speed, falling back to the product name only
   // when NWS states no speed. Justin chose the 40 mph floor on 2026-08-19 against
   // real alert data; it applies to dust ONLY and does not put a floor on wind.
