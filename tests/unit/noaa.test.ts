@@ -126,6 +126,26 @@ describe('getAlertsForPoint — watch vs warning', () => {
   })
 })
 
+describe('getAlertsForPoint — onset', () => {
+  const hours = (h: number) => new Date(Date.now() + h * 3600_000).toISOString()
+
+  // 2026-10-09: Wind Advisory issued the night before for Sunday texted homeowners early.
+  it('holds a Wind Advisory whose onset is still in the future', async () => {
+    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset: hours(40) }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('passes a Wind Advisory once onset has passed', async () => {
+    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset: hours(-1) }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+  })
+
+  it('passes an alert with no onset', async () => {
+    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset: null }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+  })
+})
+
 describe('statedWindMph', () => {
   it('reads wind and gust phrasings, taking the top of a range', () => {
     expect(statedWindMph('strong wind in excess of 50 mph')).toBe(50)

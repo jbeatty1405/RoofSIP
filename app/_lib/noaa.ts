@@ -134,6 +134,13 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         // which Justin wants kept broad with no mph floor) were Likely/Expected.
         if (event.includes('watch')) return false
         if (certainty === 'possible' || urgency === 'future') return false
+        // Hold alerts that have not started. NWS issues advisories ahead of time:
+        // `effective` is when it was issued, `onset` is when the weather begins.
+        // 2026-10-09: a Wind Advisory issued the night before for Sunday 8am-5pm
+        // texted 4 homeowners "weather near your home" before any wind. The alert
+        // stays in the feed, so it sends on a later run once onset passes.
+        const onset = Date.parse(f.properties?.onset ?? '')
+        if (!Number.isNaN(onset) && onset > Date.now()) return false
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
         // Only trigger on things that actually damage a roof. We deliberately do
