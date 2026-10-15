@@ -143,6 +143,10 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         // stays in the feed, so it sends on a later run once onset passes.
         const onset = Date.parse(f.properties?.onset ?? '')
         if (!Number.isNaN(onset) && onset > Date.now()) return false
+        // Wind Advisory is breezy weather, not damage. 2026-10-15: one fired
+        // "storm just hit" at a Flagstaff homeowner. Justin: only alert on storms
+        // that actually hit. High Wind / Extreme Wind warnings still pass below.
+        if (event.includes('wind advisory')) return false
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
         // Only trigger on things that actually damage a roof. We deliberately do

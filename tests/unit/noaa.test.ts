@@ -58,10 +58,15 @@ describe('getAlertsForPoint — watch vs warning', () => {
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
-  // Justin's standing rule: keep 'wind' broad, no mph floor. Excluding watches
-  // must not take advisories with it — NWS sends those as Likely/Expected.
-  it('keeps a Wind Advisory', async () => {
+  // 2026-10-15: Justin wants alerts only for storms that actually hit, so Wind
+  // Advisories are dropped. High Wind warnings still pass, with no mph floor.
+  it('drops a Wind Advisory', async () => {
     mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', severity: 'Moderate' }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('keeps a High Wind Warning', async () => {
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', severity: 'Severe' }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
@@ -135,13 +140,13 @@ describe('getAlertsForPoint — onset', () => {
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
   })
 
-  it('passes a Wind Advisory once onset has passed', async () => {
-    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset: hours(-1) }))
+  it('passes a High Wind Warning once onset has passed', async () => {
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', onset: hours(-1) }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
   it('passes an alert with no onset', async () => {
-    mockAlerts(alertFeature({ event: 'Wind Advisory', certainty: 'Likely', urgency: 'Expected', onset: null }))
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', onset: null }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 })
