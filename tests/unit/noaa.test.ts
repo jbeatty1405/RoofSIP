@@ -66,7 +66,7 @@ describe('getAlertsForPoint — watch vs warning', () => {
   })
 
   it('keeps a High Wind Warning', async () => {
-    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', severity: 'Severe' }))
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Observed', urgency: 'Immediate', severity: 'Severe' }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
@@ -74,11 +74,11 @@ describe('getAlertsForPoint — watch vs warning', () => {
   // when NWS states no speed. Justin chose the 40 mph floor on 2026-08-19 against
   // real alert data; it applies to dust ONLY and does not put a floor on wind.
   const dust = (event: string, description: string) =>
-    alertFeature({ event, description, certainty: 'Likely', urgency: 'Expected' })
+    alertFeature({ event, description, certainty: 'Observed', urgency: 'Immediate' })
 
-  it('keeps a windy Blowing Dust Advisory, which the product name alone would miss', async () => {
+  it('drops a windy Blowing Dust Advisory: advisories never fire', async () => {
     mockAlerts(dust('Blowing Dust Advisory', 'Strong thunderstorms with organized outflow wind gusts of 45-55 mph.'))
-    expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
   })
 
   it('drops a Blowing Dust Advisory that states no wind', async () => {
@@ -98,7 +98,7 @@ describe('getAlertsForPoint — watch vs warning', () => {
 
   it('reads the top of a range and survives the NWS line wrap', async () => {
     // NWS hard-wraps descriptions, so the number often lands on the next line.
-    mockAlerts(dust('Blowing Dust Advisory', 'Less than a quarter mile visibility with strong wind in excess of\n50 mph.'))
+    mockAlerts(dust('Dust Storm Warning', 'Less than a quarter mile visibility with strong wind in excess of\n50 mph.'))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
@@ -131,6 +131,23 @@ describe('getAlertsForPoint — watch vs warning', () => {
   })
 })
 
+describe('getAlertsForPoint — observed only', () => {
+  it('drops an advisory even if marked Observed', async () => {
+    mockAlerts(alertFeature({ event: 'Wind Advisory' }), alertFeature({ event: 'Blowing Dust Advisory' }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('drops a warning NWS marks Likely instead of Observed', async () => {
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected' }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('drops an alert with no certainty', async () => {
+    mockAlerts(alertFeature({ certainty: undefined }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+})
+
 describe('getAlertsForPoint — onset', () => {
   const hours = (h: number) => new Date(Date.now() + h * 3600_000).toISOString()
 
@@ -141,12 +158,12 @@ describe('getAlertsForPoint — onset', () => {
   })
 
   it('passes a High Wind Warning once onset has passed', async () => {
-    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', onset: hours(-1) }))
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Observed', urgency: 'Immediate', onset: hours(-1) }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 
   it('passes an alert with no onset', async () => {
-    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', onset: null }))
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Observed', urgency: 'Immediate', onset: null }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toHaveLength(1)
   })
 })

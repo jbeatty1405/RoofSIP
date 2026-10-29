@@ -147,6 +147,11 @@ export async function getAlertsForPoint(lat: string, lon: string): Promise<Weath
         // "storm just hit" at a Flagstaff homeowner. Justin: only alert on storms
         // that actually hit. High Wind / Extreme Wind warnings still pass below.
         if (event.includes('wind advisory')) return false
+        // 2026-10-29: Justin's rule is alert only on what is actually happening in
+        // the zip: no advisories, no watches, nothing incoming. Keep only alerts
+        // NWS marks Observed (warnings confirmed by radar or spotters).
+        if (event.includes('advisory')) return false
+        if (certainty !== 'observed') return false
         // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
         // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
         // Only trigger on things that actually damage a roof. We deliberately do
