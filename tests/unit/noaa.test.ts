@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { getAlertsForPoint, statedWindMph } from '@/app/_lib/noaa'
-import { localDateKey } from '@/app/_lib/timezone'
+import { getAlertsForPoint, statedWindMph, scanStates, alertsAtPoint, pointInGeometry, rootAlertId, ALERT_LOOKBACK_MS } from '@/app/_lib/noaa'
+import { localDateKey, zipState } from '@/app/_lib/timezone'
 
 // Shapes a fake api.weather.gov /alerts/active response around one alert, with
 // the three fields the filter reads. Defaults mirror what NWS actually sends for
@@ -225,5 +225,147 @@ describe('getAlertsForPoint — end time', () => {
     )
     const alerts = await getAlertsForPoint('33.4484', '-112.0740')
     expect(alerts.map(a => a.ends)).toEqual(['2026-10-11T17:00:00-07:00', '2026-10-09T10:00:00-07:00'])
+  })
+})
+
+// The real polygon of the Oct 21 2026 Flagstaff Tornado Warning (FGZ, 9:22-9:45am
+// MST). The hourly cron never ran inside it, so the house at 5743 E Jeremy Ln
+// (86004) got no lead.
+const FLAGSTAFF_TOR = {
+  type: 'MultiPolygon',
+  coordinates: [[[[-111.63, 35.14], [-111.71, 35.17], [-111.59, 35.4], [-111.38, 35.32], [-111.63, 35.14]]]],
+}
+const JEREMY_LN = { lat: '35.2655', lon: '-111.5459' }
+
+describe('pointInGeometry', () => {
+  it('places the Flagstaff house inside the Oct 21 tornado warning', () => {
+    expect(pointInGeometry(-111.5459, 35.2655, FLAGSTAFF_TOR)).toBe(true)
+  })
+  it('keeps downtown Phoenix outside it', () => {
+    expect(pointInGeometry(-112.074, 33.4484, FLAGSTAFF_TOR)).toBe(false)
+  })
+  it('respects a hole in a polygon', () => {
+    const donut = {
+      type: 'Polygon',
+      coordinates: [
+        [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+        [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]],
+      ],
+    }
+    expect(pointInGeometry(2, 2, donut)).toBe(true)
+    expect(pointInGeometry(5, 5, donut)).toBe(false)
+  })
+})
+
+describe('rootAlertId', () => {
+  it('keys an Update on the first message of its chain', () => {
+    const update = {
+      id: 'https://api.weather.gov/alerts/urn:oid:update2',
+      properties: {
+        references: [
+          { identifier: 'urn:oid:update1', sent: '2026-10-21T09:30:00-07:00' },
+          { identifier: 'urn:oid:original', sent: '2026-10-21T09:22:00-07:00' },
+        ],
+      },
+    }
+    expect(rootAlertId(update)).toBe('https://api.weather.gov/alerts/urn:oid:original')
+  })
+  it('uses its own id when it references nothing', () => {
+    expect(rootAlertId({ id: 'https://api.weather.gov/alerts/urn:oid:x', properties: {} }))
+      .toBe('https://api.weather.gov/alerts/urn:oid:x')
+  })
+})
+
+describe('zipState', () => {
+  it('maps the ZIPs RoofSIP actually holds', () => {
+    expect(zipState('86004')).toBe('AZ')
+    expect(zipState('85032')).toBe('AZ')
+    expect(zipState('79901')).toBe('TX')
+    expect(zipState('88510')).toBe('TX') // El Paso sits inside the NM block
+    expect(zipState('87101')).toBe('NM')
+  })
+  it('returns null for junk', () => {
+    expect(zipState('')).toBeNull()
+    expect(zipState('abc')).toBeNull()
+    expect(zipState(null)).toBeNull()
+  })
+})
+
+describe('scanStates', () => {
+  const NOW = Date.parse('2026-10-21T17:00:00Z')
+  const torFeature = (overrides: Record<string, unknown> = {}) => ({
+    id: 'https://api.weather.gov/alerts/urn:oid:tor',
+    geometry: FLAGSTAFF_TOR,
+    properties: {
+      event: 'Tornado Warning',
+      certainty: 'Observed',
+      urgency: 'Immediate',
+      severity: 'Extreme',
+      messageType: 'Alert',
+      sent: '2026-10-21T16:22:00Z',
+      onset: '2026-10-21T16:22:00Z',
+      ends: '2026-10-21T16:45:00Z',
+      headline: 'Tornado Warning issued October 21',
+      description: 'Ping pong ball size hail.',
+      ...overrides,
+    },
+  })
+
+  // Route each URL to its own fake response: /alerts/active vs /alerts?start=
+  function mockNws(active: any[], recent: any[], status = 200) {
+    const fetchMock = vi.fn(async (url: string) => ({
+      ok: status === 200,
+      status,
+      json: async () => ({ features: url.includes('/alerts/active') ? active : recent }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  // The bug: by the next run the warning had expired and dropped out of
+  // /alerts/active. The recent search still returns it.
+  it('catches a warning that started and ended between two runs', async () => {
+    mockNws([], [torFeature()])
+    const { alerts, failedStates } = await scanStates(['AZ'], NOW)
+    expect(failedStates).toEqual([])
+    expect(alertsAtPoint(alerts, JEREMY_LN.lat, JEREMY_LN.lon).map(a => a.type)).toEqual(['Tornado Warning'])
+    expect(alertsAtPoint(alerts, '33.4484', '-112.0740')).toEqual([])
+  })
+
+  it('asks NWS for nothing older than the lookback window', async () => {
+    const fetchMock = mockNws([], [])
+    await scanStates(['AZ'], NOW)
+    const urls = fetchMock.mock.calls.map(c => c[0] as string)
+    const start = new Date(NOW - ALERT_LOOKBACK_MS).toISOString().replace(/\.\d{3}Z$/, 'Z')
+    expect(urls).toContain(`https://api.weather.gov/alerts?area=AZ&status=actual&start=${start}&limit=500`)
+    expect(urls).toHaveLength(2) // one state = two requests, however many ZIPs
+  })
+
+  it('collapses an alert and its update into one storm keyed on the original', async () => {
+    const update = torFeature({
+      messageType: 'Update',
+      sent: '2026-10-21T16:35:00Z',
+      references: [{ identifier: 'urn:oid:tor', sent: '2026-10-21T16:22:00Z' }],
+    })
+    mockNws([], [torFeature(), { ...update, id: 'https://api.weather.gov/alerts/urn:oid:tor-upd' }])
+    const { alerts } = await scanStates(['AZ'], NOW)
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0].alert.id).toBe('https://api.weather.gov/alerts/urn:oid:tor')
+  })
+
+  it('skips Cancel messages and still applies the watch filter', async () => {
+    mockNws([], [
+      torFeature({ messageType: 'Cancel' }),
+      torFeature({ event: 'Severe Thunderstorm Watch', certainty: 'Possible', urgency: 'Future' }),
+    ])
+    const { alerts } = await scanStates(['AZ'], NOW)
+    expect(alerts).toEqual([])
+  })
+
+  it('reports a failed state instead of returning clear skies', async () => {
+    mockNws([], [], 503)
+    const { alerts, failedStates } = await scanStates(['AZ'], NOW)
+    expect(alerts).toEqual([])
+    expect(failedStates).toEqual(['AZ'])
   })
 })

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { APP_URL } from '@/app/_lib/url'
 
-// Vercel cron calls this with GET every hour
+// Vercel cron calls this with GET every 10 minutes (vercel.json). GitHub Actions
+// also calls it hourly as a backup and to fail loudly on blind ZIPs.
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {

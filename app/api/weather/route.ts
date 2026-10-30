@@ -1,9 +1,9 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
-import { geocodeZip, getAlertsForPoint, WeatherAlert } from '@/app/_lib/noaa'
+import { geocodeZip, scanStates, alertsAtPoint, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
-import { rooferTimezone, timezoneFromZips, zipTimezone, localDateKey } from '@/app/_lib/timezone'
+import { rooferTimezone, timezoneFromZips, zipTimezone, zipState, localDateKey } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
 import { alreadyNotifiedIds } from '@/app/_lib/follow-ups'
@@ -158,8 +158,10 @@ export async function POST(request: NextRequest) {
 
   const supabase = await createServiceClient()
 
-  // Prevent more than 2 executions per hour even with a valid secret
-  const cronAllowed = await checkRateLimit(supabase, null, 'cron_weather', 2, 3600 * 1000)
+  // At most one run per 4 minutes, even with a valid secret. The Vercel cron
+  // fires every 10; the GitHub hourly backup that lands next to one is skipped
+  // here, so two runs can't overlap and double-send.
+  const cronAllowed = await checkRateLimit(supabase, null, 'cron_weather', 1, 4 * 60 * 1000)
   if (!cronAllowed) return NextResponse.json({ skipped: true, reason: 'cron_rate_limited' })
   const twilio = getTwilioClient()
 
@@ -385,21 +387,30 @@ export async function POST(request: NextRequest) {
 
   const geoCache = await buildGeoCache(supabase, allZips)
 
-  // A ZIP we cannot geocode is NOT "no storm" — it is a blind spot. Previously
-  // both cases collapsed to an empty alert list, so a geocoder outage looked
-  // exactly like clear skies. Track them separately and report them.
-  const blindZips = allZips.filter(z => !geoCache[z])
+  // One NWS scan per state (active + recently issued), matched to each ZIP here.
+  // See scanStates for why this replaced a live per-ZIP lookup.
+  const stateByZip = new Map(allZips.map(z => [z, zipState(z)]))
+  const states = [...new Set([...stateByZip.values()].filter(Boolean))] as string[]
+  const { alerts: scanned, failedStates } = await scanStates(states)
+
+  // A ZIP we cannot geocode, place in a state, or scan is NOT "no storm" — it is
+  // a blind spot. Previously all of these collapsed to an empty alert list, so an
+  // outage looked exactly like clear skies. Track them separately and report them.
+  const blindZips = allZips.filter(z => {
+    const state = stateByZip.get(z)
+    return !geoCache[z] || !state || failedStates.includes(state)
+  })
   if (blindZips.length) {
     console.error(
-      `[weather] BLIND on ${blindZips.length}/${allZips.length} ZIP(s) — could not geocode, so storms there CANNOT be detected this run: ${blindZips.join(', ')}`
+      `[weather] BLIND on ${blindZips.length}/${allZips.length} ZIP(s) — could not geocode or scan, so storms there CANNOT be detected this run: ${blindZips.join(', ')}`
     )
   }
 
-  const alertsByZip: Record<string, Awaited<ReturnType<typeof getAlertsForPoint>>> = {}
-  await Promise.all(allZips.map(async (zip) => {
+  const alertsByZip: Record<string, WeatherAlert[]> = {}
+  for (const zip of allZips) {
     const point = geoCache[zip]
-    alertsByZip[zip] = point ? await getAlertsForPoint(point.lat, point.lon) : []
-  }))
+    alertsByZip[zip] = point ? alertsAtPoint(scanned, point.lat, point.lon) : []
+  }
 
   // Persist every storm we detect. weather_events existed in the schema but
   // nothing ever wrote to it, so there was no record of what actually hit —
