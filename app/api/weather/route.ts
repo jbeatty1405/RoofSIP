@@ -368,6 +368,18 @@ export async function POST(request: NextRequest) {
     .eq('is_test', false)
     .limit(10000)
 
+  // Opted out (replied STOP or no) or never consented, and not watch-only. Never
+  // texted, but a storm on their roof is still a lead the PM can try to save by
+  // phone. Before 2026-11-01 they fell out of every list and storms there were
+  // invisible.
+  const { data: optedOutHomeowners } = await supabase
+    .from('homeowners')
+    .select('id, name, phone, address, zip_code, roofer_id, opted_out_at, profiles(subscription_status)')
+    .eq('tcpa_consent', false)
+    .eq('monitor_only', false)
+    .eq('is_test', false)
+    .limit(10000)
+
   // One zone per roofer, resolved from the ZIPs of every homeowner they hold, so
   // the slot grid below can't shift between homeowners inside a single run.
   // Built from all three lists because they partition the roofer's real book.
@@ -376,6 +388,7 @@ export async function POST(request: NextRequest) {
     ...((monitorOnlyHomeowners ?? []) as any[]),
     ...((activeHomeowners ?? []) as any[]),
     ...((unconfirmedHomeowners ?? []) as any[]),
+    ...((optedOutHomeowners ?? []) as any[]),
   ]) {
     const list = zipsByRoofer.get(h.roofer_id) ?? []
     list.push(h.zip_code)
@@ -389,6 +402,7 @@ export async function POST(request: NextRequest) {
     ...(monitorOnlyHomeowners ?? []).map((h: any) => h.zip_code),
     ...(activeHomeowners ?? []).map((h: any) => h.zip_code),
     ...(unconfirmedHomeowners ?? []).map((h: any) => h.zip_code),
+    ...(optedOutHomeowners ?? []).map((h: any) => h.zip_code),
   ].filter(Boolean))] as string[]
 
   const geoCache = await buildGeoCache(supabase, allZips)
@@ -470,6 +484,24 @@ export async function POST(request: NextRequest) {
         homeowner_id: h.id,
         pushTitle: '⛈️ Storm lead — call now',
         message: `Storm just hit ${h.name}'s area (${h.address}). They never confirmed texts, so we couldn't auto-alert them. Call ${h.phone} now — offer the free inspection while it's fresh, and have them reply YES for future alerts.`,
+      })
+    }
+  }
+
+  // Opted out / never consented: PM lead only, never a text. Same once-a-day dedup.
+  if (optedOutHomeowners?.length) {
+    const optedOutNotifiedSet = await notifiedTodaySet(supabase, optedOutHomeowners as any[])
+    if (!optedOutNotifiedSet) return NextResponse.json({ skipped: true, reason: 'opted_out_dedup_read_failed' })
+
+    for (const h of optedOutHomeowners as any[]) {
+      if (h.profiles?.subscription_status !== 'active') continue
+      if (optedOutNotifiedSet.has(h.id)) continue
+      if (!(alertsByZip[h.zip_code] ?? []).length) continue
+      await notifyRoofer(supabase, {
+        roofer_id: h.roofer_id,
+        homeowner_id: h.id,
+        pushTitle: '⛈️ Storm lead — call now',
+        message: `Storm just hit ${h.name}'s area (${h.address}). ${h.opted_out_at ? 'They opted out of texts' : "They haven't agreed to texts"}, so nothing went to them. Call ${h.phone} to offer the free inspection. Don't text them.`,
       })
     }
   }

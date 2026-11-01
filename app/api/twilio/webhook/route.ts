@@ -170,12 +170,11 @@ export async function POST(request: NextRequest) {
       await notifyRoofer(supabase, {
         roofer_id: h.roofer_id,
         homeowner_id: h.id,
-        // Not hot_lead and not call_needed — an opt-out is the one thing that is
-        // explicitly NOT a task. Typing it either way would put a person who
-        // just said stop at the top of the PM's call list.
-        type: 'opted_out',
-        pushTitle: '🚫 Opted out',
-        message: `${h.name} replied STOP. They're off all texts now — no more storm alerts to ${h.phone}. Nothing to do here.`,
+        // A hot lead, by Justin's call (2026-11-01): a STOP is a homeowner the PM
+        // can still try to save with a phone call. Texting them is over.
+        type: 'hot_lead',
+        pushTitle: '🚫 Opted out — call to save',
+        message: `${h.name} replied STOP, so they won't get any more texts. Give them a call at ${h.phone} to save the relationship. Don't text them.`,
       })
     }
     return new NextResponse('', { status: 200 })

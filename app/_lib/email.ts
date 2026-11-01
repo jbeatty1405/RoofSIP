@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer'
-import { buildInspectionIcs } from './ics'
+import { buildInspectionIcs, googleCalendarUrl } from './ics'
 import { APP_URL } from './url'
 
 const transporter = nodemailer.createTransport({
@@ -254,15 +254,16 @@ export async function sendPmConfirmationEmail({
 
   // One-tap "Add to Calendar" link (served as an inline .ics by /api/calendar).
   const calendarUrl = ics && bookingId ? `${APP_URL}/api/calendar?booking=${bookingId}` : null
+  const googleUrl = startISO ? googleCalendarUrl({ startISO, homeownerName, homeownerAddress, homeownerPhone }) : null
 
   return await transporter.sendMail({
     from: `RoofSIP <${process.env.GMAIL_USER}>`,
     to,
-    subject: `New inspection request — ${homeownerName}`,
+    subject: `Inspection booked — ${homeownerName}, ${proposedTime}`,
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
-        <h2 style="margin:0 0 4px;font-size:18px;color:#111">New inspection request</h2>
-        <p style="margin:0 0 24px;color:#666;font-size:14px">A homeowner replied YES to your storm alert.</p>
+        <h2 style="margin:0 0 4px;font-size:18px;color:#111">Inspection booked</h2>
+        <p style="margin:0 0 24px;color:#666;font-size:14px">The homeowner confirmed this time by text. Add it to your calendar below.</p>
 
         <div style="background:#f4f4f5;border-radius:10px;padding:16px;margin-bottom:24px">
           <p style="margin:0 0 6px;font-size:14px"><strong>${homeownerName}</strong></p>
@@ -270,7 +271,7 @@ export async function sendPmConfirmationEmail({
           <p style="margin:0;font-size:13px;color:#555">${homeownerPhone}</p>
         </div>
 
-        <p style="margin:0 0 16px;font-size:14px;color:#333">Proposed time: <strong>${proposedTime}</strong></p>
+        <p style="margin:0 0 16px;font-size:14px;color:#333">Time: <strong>${proposedTime}</strong></p>
 
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 4px"><tr>
           <td style="padding-right:10px">
@@ -278,16 +279,23 @@ export async function sendPmConfirmationEmail({
               View details
             </a>
           </td>
+        </tr></table>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:12px 0 4px"><tr>
+${googleUrl ? `          <td style="padding-right:10px">
+            <a href="${googleUrl}" style="display:inline-block;background:#111;color:white;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:15px;font-weight:600">
+              📅 Google Calendar
+            </a>
+          </td>` : ''}
 ${calendarUrl ? `          <td>
-            <a href="${calendarUrl}" style="display:inline-block;background:#111;color:white;text-decoration:none;padding:12px 22px;border-radius:8px;font-size:15px;font-weight:600">
-              📅 Add to Calendar
+            <a href="${calendarUrl}" style="display:inline-block;background:#111;color:white;text-decoration:none;padding:12px 18px;border-radius:8px;font-size:15px;font-weight:600">
+              📅 Apple / Outlook
             </a>
           </td>` : ''}
         </tr></table>
-${calendarUrl ? `
-        <p style="margin:14px 0 0;font-size:12px;color:#999">"Add to Calendar" works with Apple Calendar, Google, and Outlook.</p>` : ''}
+${calendarUrl || googleUrl ? `
+        <p style="margin:14px 0 0;font-size:12px;color:#999">The calendar file is also attached to this email.</p>` : ''}
         <p style="margin:20px 0 0;font-size:12px;color:#999">
-          If this time doesn't work, just reply to this email with your next available time and we'll update the homeowner automatically.
+          Need a different time? Call ${homeownerName} at ${homeownerPhone} to move it.
         </p>
       </div>
     `,
