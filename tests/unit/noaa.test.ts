@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { getAlertsForPoint, statedWindMph, scanStates, alertsAtPoint, pointInGeometry, rootAlertId, ALERT_LOOKBACK_MS } from '@/app/_lib/noaa'
+import { getAlertsForPoint, hailInches, statedWindMph, scanStates, alertsAtPoint, pointInGeometry, rootAlertId, ALERT_LOOKBACK_MS } from '@/app/_lib/noaa'
 import { localDateKey, zipState } from '@/app/_lib/timezone'
 
 // Shapes a fake api.weather.gov /alerts/active response around one alert, with
@@ -138,7 +138,22 @@ describe('getAlertsForPoint — observed only', () => {
   })
 
   it('drops a warning NWS marks Likely instead of Observed', async () => {
-    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected' }))
+    mockAlerts(alertFeature({ event: 'Severe Thunderstorm Warning', certainty: 'Likely', urgency: 'Expected' }))
+    expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
+  })
+
+  // NWS marks nearly every High Wind Warning Likely; they mean 58+ mph gusts.
+  it('keeps High and Extreme Wind Warnings marked Likely once in effect', async () => {
+    mockAlerts(
+      alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected' }),
+      alertFeature({ event: 'Extreme Wind Warning', certainty: 'Likely', urgency: 'Immediate' }),
+    )
+    expect((await getAlertsForPoint('33.4484', '-112.0740')).map(a => a.type))
+      .toEqual(['High Wind Warning', 'Extreme Wind Warning'])
+  })
+
+  it('still drops a Likely High Wind Warning that has not started', async () => {
+    mockAlerts(alertFeature({ event: 'High Wind Warning', certainty: 'Likely', urgency: 'Expected', onset: new Date(Date.now() + 6 * 3600e3).toISOString() }))
     expect(await getAlertsForPoint('33.4484', '-112.0740')).toEqual([])
   })
 
@@ -367,5 +382,28 @@ describe('scanStates', () => {
     const { alerts, failedStates } = await scanStates(['AZ'], NOW)
     expect(alerts).toEqual([])
     expect(failedStates).toEqual(['AZ'])
+  })
+})
+
+describe('hailInches', () => {
+  const a = (description: string, maxHailInches: number | null = null) => ({ headline: 'Severe Thunderstorm Warning', description, maxHailInches })
+
+  // Real NWS wording, 2026-11-01. The old digits-then-"in" regex read 0 here.
+  it('reads the hail object NWS names', () => {
+    expect(hailInches(a('HAZARD...60 mph wind gusts and quarter size hail.'))).toBe(1)
+    expect(hailInches(a('HAZARD...Ping pong ball size hail.'))).toBe(1.5)
+    expect(hailInches(a('HAZARD...Penny size hail.'))).toBe(0.75)
+  })
+
+  it('uses the maxHailSize parameter', () => {
+    expect(hailInches(a('HAZARD...60 mph wind gusts.', 0.75))).toBe(0.75)
+  })
+
+  it('still reads a size written in inches', () => {
+    expect(hailInches(a('Hail up to 1.25 inches in diameter.'))).toBe(1.25)
+  })
+
+  it('is 0 with no hail', () => {
+    expect(hailInches(a('HAZARD...70 mph wind gusts.'))).toBe(0)
   })
 })

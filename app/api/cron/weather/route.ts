@@ -26,6 +26,11 @@ export async function GET(request: NextRequest) {
     headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
   })
 
-  const data = await res.json()
-  return NextResponse.json(data)
+  // Pass trouble through as a failing status. This used to return 200 whatever
+  // happened inside (paused, a failed dedup read, a 401 from /api/weather), so
+  // the GitHub check stayed green on runs that did nothing.
+  const data = await res.json().catch(() => ({ error: `weather returned non-JSON (HTTP ${res.status})` }))
+  const benignSkip = data?.skipped && data?.reason === 'cron_rate_limited' // another run just did the work
+  const failed = !res.ok || data?.paused || data?.error || (data?.skipped && !benignSkip)
+  return NextResponse.json(data, { status: failed ? 500 : 200 })
 }

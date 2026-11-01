@@ -6,6 +6,35 @@ export type WeatherAlert = {
   severity: string
   /** When the weather is expected to be over (NWS `ends`, else `expires`). ISO, or null. */
   ends?: string | null
+  /** NWS `parameters.maxHailSize` in inches, when the alert carries one. */
+  maxHailInches?: number | null
+}
+
+// NWS writes hail as an object ("HAZARD...Quarter size hail."), not a number, so
+// a digits-then-"in" regex matched 0 of 64 live warnings with >= 1/4" hail
+// (2026-11-01). Sizes are NWS's own hail chart.
+const HAIL_OBJECTS: [string, number][] = [
+  ['softball', 4], ['grapefruit', 4], ['baseball', 2.75], ['tea cup', 3], ['tennis ball', 2.5],
+  ['hen egg', 2], ['egg', 2], ['golf ball', 1.75], ['ping pong', 1.5], ['walnut', 1.5],
+  ['half dollar', 1.25], ['quarter', 1], ['nickel', 0.88], ['penny', 0.75], ['dime', 0.75],
+  ['marble', 0.5], ['pea', 0.25],
+]
+
+/** Largest hail size an alert mentions, in inches (0 when none). */
+export function hailInches(alert: Pick<WeatherAlert, 'headline' | 'description' | 'maxHailInches'>): number {
+  let best = alert.maxHailInches ?? 0
+  const text = `${alert.headline} ${alert.description}`.toLowerCase()
+  for (const m of text.matchAll(/hail[^.]*?(\d*\.?\d+)\s*in(?:ch(?:es)?)?/g)) best = Math.max(best, parseFloat(m[1]))
+  for (const [name, inches] of HAIL_OBJECTS) {
+    if (new RegExp(`\\b${name}\\b[^.]*hail|hail[^.]*\\b${name}\\b`).test(text)) best = Math.max(best, inches)
+  }
+  return best
+}
+
+function parseHailSize(raw: unknown): number | null {
+  // e.g. ["1.00"], ["Up to .75"], ["0.00"]
+  const m = String(Array.isArray(raw) ? raw[0] ?? '' : raw ?? '').match(/\d*\.?\d+/)
+  return m ? parseFloat(m[0]) : null
 }
 
 // A null return here means "we do not know where this ZIP is", and every caller
@@ -145,7 +174,12 @@ export function qualifiesForLead(f: any): boolean {
   // the zip: no advisories, no watches, nothing incoming. Keep only alerts
   // NWS marks Observed (warnings confirmed by radar or spotters).
   if (event.includes('advisory')) return false
-  if (certainty !== 'observed') return false
+  // Exception: NWS issues High/Extreme Wind Warnings only for 58+ mph gusts but
+  // marks nearly all of them Likely (35 of 43 live on 2026-11-01), so the
+  // Observed rule silently dropped every one. They count once in effect (the
+  // onset check above already held back any that haven't started).
+  const damagingWind = event === 'high wind warning' || event === 'extreme wind warning'
+  if (certainty !== 'observed' && !(damagingWind && certainty === 'likely')) return false
   // Temperature alerts (Wind Chill, Excessive Heat, Hard Freeze, Frost,
   // Extreme Cold) match 'wind'/severity but mean nothing for roofs. Drop them.
   // Only trigger on things that actually damage a roof. We deliberately do
@@ -184,6 +218,7 @@ function toWeatherAlert(f: any, id: string = f.id ?? ''): WeatherAlert {
     description: f.properties.description ?? '',
     severity: f.properties.severity ?? 'Unknown',
     ends: f.properties.ends ?? f.properties.expires ?? null,
+    maxHailInches: parseHailSize(f.properties.parameters?.maxHailSize),
   }
 }
 

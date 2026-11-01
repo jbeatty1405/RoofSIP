@@ -39,12 +39,15 @@ export async function notifyRoofer(supabase: DbClient, args: NotifyArgs): Promis
   const type = args.type ?? 'hot_lead'
 
   // 1) Persist the in-app notification (unchanged shape the app already reads).
-  await supabase.from('notifications').insert({
+  const { error: insertErr } = await supabase.from('notifications').insert({
     roofer_id: args.roofer_id,
     homeowner_id: args.homeowner_id ?? null,
     type,
     message: args.message,
   })
+  // A lost lead must at least be loud. The push below still goes out, so the PM
+  // hears about it even when the row didn't save.
+  if (insertErr) console.error(`[notify] notification insert FAILED for roofer ${args.roofer_id} (${type}): ${args.message}`, insertErr)
 
   // 2) Push to the PM's device if one is registered.
   try {

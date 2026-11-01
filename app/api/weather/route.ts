@@ -1,8 +1,8 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
-import { geocodeZip, scanStates, alertsAtPoint, WeatherAlert } from '@/app/_lib/noaa'
+import { geocodeZip, scanStates, alertsAtPoint, hailInches, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
-import { isQuietHoursEverywhere, isQuietHoursForZip } from '@/app/_lib/schedule'
+import { isQuietHoursForZip } from '@/app/_lib/schedule'
 import { rooferTimezone, timezoneFromZips, zipTimezone, zipState, localDateKey } from '@/app/_lib/timezone'
 import { getMarketById, getNextAvailableSlot, formatSlot, getRooferSchedule } from '@/app/_lib/markets'
 import { notifyRoofer } from '@/app/_lib/notify'
@@ -37,7 +37,7 @@ async function fetchInChunks(
   return { rows, ok: true }
 }
 
-// Which of these homeowners has already had a notification today, judged in each
+// Which of these homeowners has already had a STORM lead today, judged in each
 // homeowner's OWN local calendar day.
 //
 // This used to be `new Date().toISOString().slice(0, 10)` plus a `gte` on
@@ -59,7 +59,9 @@ async function notifiedTodaySet(
   // 36h comfortably spans the widest US local day (Hawaii UTC-10 to Puerto Rico UTC-4).
   const lookback = new Date(Date.now() - 36 * 3600 * 1000).toISOString()
   const { rows, ok } = await fetchInChunks(ids, (chunk) =>
-    supabase.from('notifications').select('homeowner_id, created_at').in('homeowner_id', chunk).gte('created_at', lookback),
+    // Storm leads only. Counting every notification let the "hasn't opted in"
+    // nudge (sent earlier in the same run) swallow that day's storm lead.
+    supabase.from('notifications').select('homeowner_id, created_at').in('homeowner_id', chunk).gte('created_at', lookback).ilike('message', 'Storm%'),
   )
   if (!ok) return null
 
@@ -78,14 +80,11 @@ async function notifiedTodaySet(
   return notified
 }
 
-function extractHailInches(text: string): number {
-  const m = text.match(/hail[^.]*?(\d+(?:\.\d+)?)\s*in(?:ch(?:es)?)?/i)
-  return m ? parseFloat(m[1]) : 0
-}
-
-// ≥ 0.25" (quarter-size) hail bypasses cooldown — roof-damaging threshold
+// Roof-damaging hail (>= 1", quarter size) may text again inside the 48h
+// cooldown. Until 2026-11-01 this could never fire (the hail reader matched 0
+// real warnings), so it is deliberately strict; see HAIL_RETEXT_GAP_MS.
 function isSevereHail(alert: WeatherAlert): boolean {
-  return extractHailInches(alert.description) >= 0.25 || extractHailInches(alert.headline) >= 0.25
+  return hailInches(alert) >= 1
 }
 
 function pickTemplate(templates: any[], stormType: string): string | null {
@@ -132,6 +131,11 @@ async function buildGeoCache(
 // Hard limits per cron execution — prevents a single bad run from blasting everyone
 const MAX_STORM_ALERTS_PER_RUN = 50
 const MAX_INTRO_SMS_PER_RUN = 50
+// Longest an overnight storm text may wait for the homeowner's 8am (see storm_text_queue).
+const QUEUE_MAX_AGE_MS = 13 * 3600 * 1000
+// A second storm text needs severe hail AND this long since the last one, so the
+// next warning on the same storm cell 30 minutes later can't double-text.
+const HAIL_RETEXT_GAP_MS = 12 * 3600 * 1000
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -146,15 +150,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ paused: true, reason: 'STORM_CRON_ENABLED not set' })
   }
 
-  // Only bail on the whole run when there is nobody in the country we could
-  // legally text. Per-homeowner quiet hours are enforced at each send site below,
-  // against that homeowner's own ZIP.
-  if (isQuietHoursEverywhere()) return NextResponse.json({ skipped: true, reason: 'quiet hours' })
-
-  if (await isMonthlySmsCapped()) {
-    console.error('[weather] Monthly SMS cap reached — all sends blocked for the rest of this month')
-    return NextResponse.json({ skipped: true, reason: 'monthly_sms_cap' })
-  }
+  // A storm hit ALWAYS becomes a lead. Texting rules (quiet hours, SMS cap, kill
+  // switch, pauses) only hold or stop the TEXT. Until 2026-11-01 the run bailed
+  // entirely during all-US quiet hours (~midnight-6am AZ) and on the SMS cap, so
+  // overnight storms produced no leads at all. Quiet hours are enforced per
+  // homeowner at each send site below; overnight texts are queued for 8am.
+  const smsBlocked = await isMonthlySmsCapped()
+  if (smsBlocked) console.error('[weather] SMS cap / kill switch on — no texts this run; storm hits become PM leads instead')
 
   const supabase = await createServiceClient()
 
@@ -180,7 +182,7 @@ export async function POST(request: NextRequest) {
     const optinCutoff = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
     const { data: staleOptins } = await supabase
       .from('homeowners')
-      .select('id, name, phone, roofer_id, profiles(subscription_status)')
+      .select('id, name, phone, zip_code, roofer_id, profiles(subscription_status)')
       .eq('tcpa_consent', true)
       .eq('is_test', false)
       .eq('sms_confirmed', false)
@@ -190,6 +192,8 @@ export async function POST(request: NextRequest) {
 
     for (const h of (staleOptins ?? []) as any[]) {
       if (h.profiles?.subscription_status !== 'active') continue
+      // Not urgent: now that the run goes all night, don't push this at 2am.
+      if (isQuietHoursForZip(h.zip_code)) continue
       // Once per homeowner: skip if we already sent the opt-in nudge.
       const { count } = await supabase
         .from('notifications')
@@ -219,18 +223,19 @@ export async function POST(request: NextRequest) {
     .eq('is_test', false)
     .limit(10000)
 
-  if (uncontacted?.length) {
+  if (uncontacted?.length && !smsBlocked) {
     const dedup = await fetchInChunks(
       uncontacted.map((h: any) => h.id),
       (chunk) => supabase.from('sms_logs').select('homeowner_id').in('homeowner_id', chunk).eq('direction', 'outbound'),
     )
-    // Fail closed: if we can't read who's already been contacted, skip the run
-    // rather than risk re-texting everyone an intro.
-    if (!dedup.ok) return NextResponse.json({ skipped: true, reason: 'intro_dedup_read_failed' })
+    // Fail closed: if we can't read who's already been contacted, skip intros
+    // rather than risk re-texting everyone. Only intros: storm detection below
+    // must still run.
+    if (!dedup.ok) console.error('[weather] intro dedup read failed — skipping intro texts this run')
     const alreadySentIds = new Set(dedup.rows.map((l: any) => l.homeowner_id))
     let introSent = 0
 
-    for (const h of uncontacted as any[]) {
+    for (const h of (dedup.ok ? uncontacted : []) as any[]) {
       if (introSent >= MAX_INTRO_SMS_PER_RUN) break
       if (alreadySentIds.has(h.id)) continue
       // This homeowner's local window, not the run's. A deferred intro must wait
@@ -347,7 +352,8 @@ export async function POST(request: NextRequest) {
     .eq('sms_confirmed', true)
     .eq('monitor_only', false)
     .eq('is_test', false)
-    .or(`sms_paused_until.is.null,sms_paused_until.lt.${now}`)
+    // Paused homeowners (declined an inspection in the last 30 days) stay in
+    // here so a new storm still reaches the PM as a lead; they just aren't texted.
     .limit(10000)
 
   // Opt-in non-responders: consented but never replied YES (not monitor-only, not
@@ -479,14 +485,20 @@ export async function POST(request: NextRequest) {
   const sentAlertSet = new Set(sentAlert.rows.map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
   // 48h cooldown — prevents multiple hits from the same lingering storm system.
-  // Severe hail (≥ 0.25") bypasses this so a genuinely damaging new storm still fires.
+  // Severe hail can re-text after HAIL_RETEXT_GAP_MS (see isSevereHail).
   const cutoff48h = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
   const recentAlert = await fetchInChunks(
     activeIds,
-    (chunk) => supabase.from('sms_logs').select('homeowner_id').in('homeowner_id', chunk).eq('direction', 'outbound').eq('message_type', 'storm_alert').gte('sent_at', cutoff48h),
+    (chunk) => supabase.from('sms_logs').select('homeowner_id, sent_at').in('homeowner_id', chunk).eq('direction', 'outbound').eq('message_type', 'storm_alert').gte('sent_at', cutoff48h),
   )
   if (!recentAlert.ok) return NextResponse.json({ skipped: true, reason: 'storm_dedup_read_failed' })
   const sentLast48hSet = new Set(recentAlert.rows.map((l: any) => l.homeowner_id))
+  // Latest storm text per homeowner, for the severe-hail re-text gap.
+  const lastStormTextAt = new Map<string, number>()
+  for (const l of recentAlert.rows as any[]) {
+    const t = Date.parse(l.sent_at)
+    if (!(t <= (lastStormTextAt.get(l.homeowner_id) ?? 0))) lastStormTextAt.set(l.homeowner_id, t)
+  }
 
   // Don't re-pitch (and clobber the booking of) anyone who already has a future
   // confirmed inspection — the reserve upsert below keys on homeowner_id and would
@@ -498,11 +510,42 @@ export async function POST(request: NextRequest) {
   if (!confirmedBookings.ok) return NextResponse.json({ skipped: true, reason: 'confirmed_booking_read_failed' })
   const confirmedSet = new Set(confirmedBookings.rows.map((b: any) => b.homeowner_id))
 
+  // Overnight queue: a storm that hits an opted-in homeowner during their quiet
+  // hours is queued here and texted once their window opens (8am local). Before,
+  // they were skipped, and by 8am the storm had aged out of the scan, so they got
+  // nothing at all. Rows older than QUEUE_MAX_AGE_MS are dropped unsent: a 9pm
+  // storm is ~11h old at 8am, anything older is not "last night" anymore.
+  // A failed read just means no queued texts this run; it never blocks leads.
+  await supabase.from('storm_text_queue').delete().lt('queued_at', new Date(Date.now() - QUEUE_MAX_AGE_MS).toISOString())
+  const queueRead = await fetchInChunks(
+    activeIds,
+    (chunk) => supabase.from('storm_text_queue').select('*').in('homeowner_id', chunk),
+  )
+  if (!queueRead.ok) console.error('[weather] storm_text_queue read failed — queued overnight texts wait for the next run')
+  const queuedByHomeowner = new Map<string, any>(queueRead.rows.map((q: any) => [q.homeowner_id, q]))
+  const consumedQueue: string[] = []
+  let queuedTonight = 0
+
+  // Storm leads already handed to the PM today for opted-in homeowners, so a
+  // lingering storm can't produce a lead every 10 minutes.
+  const activeLeadSet = (await notifiedTodaySet(supabase, (activeHomeowners ?? []) as any[])) ?? new Set<string>()
+  let leadsInsteadOfText = 0
+  async function leadOnce(h: any, message: string, pushTitle = '⛈️ Storm lead — call now') {
+    if (activeLeadSet.has(h.id)) return
+    activeLeadSet.add(h.id)
+    await notifyRoofer(supabase, { roofer_id: h.roofer_id, homeowner_id: h.id, pushTitle, message })
+  }
+
   // Cross-contractor dedup: same phone number across multiple roofer accounts
   const hoById = new Map((activeHomeowners as any[]).map((h: any) => [h.id, h]))
   const sentLast48hPhones = new Set(
     [...sentLast48hSet].map(id => hoById.get(id)?.phone).filter(Boolean)
   )
+  const lastStormTextAtPhone = new Map<string, number>()
+  for (const [id, t] of lastStormTextAt) {
+    const phone = hoById.get(id)?.phone
+    if (phone && t > (lastStormTextAtPhone.get(phone) ?? 0)) lastStormTextAtPhone.set(phone, t)
+  }
 
   const templateCache: Record<string, any[]> = {}
   const stormAlertedThisRun = new Set<string>()
@@ -515,28 +558,84 @@ export async function POST(request: NextRequest) {
     if (!profile || profile.subscription_status !== 'active') continue
     if (pmPhoneSet.has(normalizePhone(homeowner.phone))) continue // never text a contractor's own number
     if (confirmedSet.has(homeowner.id)) continue // already has a confirmed inspection — don't re-pitch or clobber it
+
     // TCPA hours are the homeowner's, resolved from their ZIP. A storm firing at
-    // 8pm Mountain must not text an Eastern homeowner at 10pm. They stay eligible
-    // for the next run inside their own window; storms don't expire in an hour.
-    if (isQuietHoursForZip(homeowner.zip_code)) continue
-    // sms_cap (default 1,000) is the included-tier / upsell trigger, NOT a wall —
-    // keep sending past it (bumpSmsCount pings Justin once on the crossing). Only
-    // the higher per-account runaway ceiling actually stops a single account from
-    // draining the global budget and starving everyone else.
-    if (profile.sms_count_this_month >= PER_ACCOUNT_HARD_CEILING) continue
-
-    const alerts = alertsByZip[homeowner.zip_code] ?? []
+    // 8pm Mountain must not text an Eastern homeowner at 10pm.
+    const quiet = isQuietHoursForZip(homeowner.zip_code)
+    const queued = queuedByHomeowner.get(homeowner.id)
+    let alerts = alertsByZip[homeowner.zip_code] ?? []
+    const fromQueue = !quiet && !alerts.length && !!queued
+    if (fromQueue) {
+      // The storm is over; text about the one we queued overnight.
+      alerts = [{
+        id: queued.noaa_alert_id ?? '',
+        type: queued.storm_type,
+        headline: queued.headline ?? '',
+        description: queued.description ?? '',
+        severity: '',
+        ends: queued.ends_at,
+      }]
+    }
+    // Inside the window, a queued row is spent whatever happens below (sent,
+    // deduped, or turned into a lead), so it can never text twice.
+    if (!quiet && queued) consumedQueue.push(homeowner.id)
     if (!alerts.length) continue
-
-    // 48h cooldown — bypass only for severe hail (≥ 0.25") on a fresh alert
-    const inCooldown = sentLast48hSet.has(homeowner.id) || sentLast48hPhones.has(homeowner.phone)
-    if (inCooldown && !alerts.some(isSevereHail)) continue
 
     const alert = alerts[0]
     const alertId = alert.id || null
 
     // Also dedupe on specific NOAA alert ID (handles same alert recurring in feed)
     if (alertId && sentAlertSet.has(`${homeowner.id}:${alertId}`)) continue
+
+    // 48h cooldown: one storm text per lingering storm system. It holds back the
+    // TEXT only; a new storm inside the window still reaches the PM as a lead.
+    const inCooldown = sentLast48hSet.has(homeowner.id) || sentLast48hPhones.has(homeowner.phone)
+    const lastText = Math.max(lastStormTextAt.get(homeowner.id) ?? 0, lastStormTextAtPhone.get(homeowner.phone) ?? 0)
+    const hailRetext = alerts.some(isSevereHail) && Date.now() - lastText >= HAIL_RETEXT_GAP_MS
+    if (inCooldown && !hailRetext) {
+      await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area again (${homeowner.address}). They already got a storm text in the last 2 days, so no new text went out. Call ${homeowner.phone} to follow up.`)
+      continue
+    }
+
+    // Reasons we can't text right now. None of them may drop the storm: the PM
+    // gets the lead instead.
+    const pausedUntil = homeowner.sms_paused_until ? Date.parse(homeowner.sms_paused_until) : NaN
+    const cantText =
+      smsBlocked ? 'texting is paused account-wide (SMS budget)'
+      : pausedUntil > Date.now() ? 'they declined an inspection recently, so texts are paused'
+      // sms_cap (default 1,000) is the included-tier / upsell trigger, NOT a wall —
+      // keep sending past it (bumpSmsCount pings Justin once on the crossing). Only
+      // the higher per-account runaway ceiling actually stops a single account from
+      // draining the global budget and starving everyone else.
+      : profile.sms_count_this_month >= PER_ACCOUNT_HARD_CEILING ? 'this account hit its monthly text limit'
+      : null
+    if (cantText) {
+      await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area (${homeowner.address}). No text went out because ${cantText}. Call ${homeowner.phone} to offer the free inspection.`)
+      leadsInsteadOfText++
+      continue
+    }
+
+    if (quiet) {
+      // Too late/early to text: mark the lead now, queue the text for 8am their
+      // time. ignoreDuplicates keeps the first storm of the night.
+      const { data: inserted, error: queueErr } = await supabase.from('storm_text_queue').upsert({
+        homeowner_id: homeowner.id,
+        roofer_id: homeowner.roofer_id,
+        noaa_alert_id: alertId,
+        storm_type: alert.type,
+        headline: alert.headline,
+        description: alert.description,
+        ends_at: alert.ends ?? null,
+      }, { onConflict: 'homeowner_id', ignoreDuplicates: true }).select('homeowner_id')
+      if (queueErr) console.error(`[weather] could not queue overnight text for ${homeowner.id}:`, queueErr)
+      if (inserted?.length) queuedTonight++
+      await leadOnce(homeowner, queueErr
+        ? `Storm hit ${homeowner.name}'s area (${homeowner.address}) after hours. We couldn't queue their text — call ${homeowner.phone} in the morning to offer the free inspection.`
+        : `Storm hit ${homeowner.name}'s area (${homeowner.address}) after hours. They'll get your inspection text at 8am their time. Call: ${homeowner.phone}`,
+        '⛈️ Storm lead')
+      continue
+    }
+
 
     if (!templateCache[profile.id]) {
       const { data: tmpl } = await supabase
@@ -635,7 +734,8 @@ export async function POST(request: NextRequest) {
       // text them (they consented) to say their contractor will call, and drop a
       // hot lead into the PM's call list. No slot reserved, no booking row created.
       message = buildOutOfMarketSms(pmName, homeowner.name, profile.company_name ?? undefined)
-      await notifyRoofer(supabase, {
+      // A queued overnight storm already handed the PM this lead last night.
+      if (!fromQueue) await notifyRoofer(supabase, {
         roofer_id: homeowner.roofer_id,
         homeowner_id: homeowner.id,
         type: 'hot_lead',
@@ -665,14 +765,29 @@ export async function POST(request: NextRequest) {
         noaa_alert_id: alertId,
       })
 
+      // The PM sees every storm hit, not only the ones the homeowner answers.
+      // Before 2026-11-01 a timed offer made no lead at all, so an unanswered or
+      // carrier-filtered text left the PM blind until the 48h follow-up.
+      // (Out-of-market already notified above; a queued storm notified overnight.)
+      if (proposedSlot && !fromQueue) {
+        await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area (${homeowner.address}). We texted them an inspection offer for ${formatSlot(proposedSlot, rooferTz)}; you'll get an alert when they reply. Call: ${homeowner.phone}`, '⛈️ Storm lead')
+      }
+
       // Timed offers reserve their slot above. Out-of-market leads create no
       // booking row — they live as a hot lead in the PM's call list instead.
       stormAlertedThisRun.add(homeowner.id)
       sentLast48hPhones.add(homeowner.phone)
+      lastStormTextAtPhone.set(homeowner.phone, Date.now())
       await bumpSmsCount(supabase, profile.id, profile.sms_cap ?? 1000, profile.company_name ?? profile.pm_name ?? 'Account')
       totalSent++
     } catch (err) {
       console.error(`SMS failed to ${homeowner.phone}:`, err)
+      // The out-of-market path already notified the PM above; everyone else would
+      // otherwise vanish here, so hand the PM the lead.
+      if (autoSchedule || fromQueue) {
+        await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area (${homeowner.address}), but their text failed to send. Call ${homeowner.phone} to offer the free inspection.`)
+        leadsInsteadOfText++
+      }
       // The homeowner never got the offer, so release the slot we reserved for it.
       if (proposedSlot) {
         try {
@@ -724,6 +839,17 @@ export async function POST(request: NextRequest) {
       .eq('status', 'awaiting_ho_reply')
   }
 
+  if (consumedQueue.length) {
+    const { error: consumeErr } = await supabase.from('storm_text_queue').delete().in('homeowner_id', consumedQueue)
+    if (consumeErr) console.error('[weather] could not clear sent overnight texts from storm_text_queue:', consumeErr)
+  }
+
+  // Heartbeat: a run that got all the way through. The health check
+  // (/api/cron/weather/health) alarms when this goes stale, so a cron that stops
+  // firing, or runs that keep dying partway, can't look like clear skies.
+  const { error: beatErr } = await supabase.from('rate_limit_events').insert({ action: 'cron_weather_done' })
+  if (beatErr) console.error('[weather] heartbeat write failed:', beatErr)
+
   // Report blind ZIPs in the payload, not just the logs — the GitHub Actions
   // scheduler asserts on this, so a geocoder outage fails the run visibly
   // instead of returning a healthy-looking 200 with zero sends.
@@ -733,5 +859,8 @@ export async function POST(request: NextRequest) {
     zips_blind: blindZips.length,
     blind_zips: blindZips,
     storms_detected: detected.length,
+    queued_for_morning: queuedTonight,
+    leads_instead_of_text: leadsInsteadOfText,
+    sms_blocked: smsBlocked,
   })
 }

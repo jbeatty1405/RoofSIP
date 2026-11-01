@@ -60,6 +60,10 @@ export async function POST(request: NextRequest) {
   const toPhone = payload.To
   const messageBody = (payload.Body ?? '').trim()
   const messageLower = messageBody.toLowerCase()
+  // Words only, for keyword matching: "Yes!", "yes please", "YES 👍" all read as yes.
+  const messageWords = messageLower.replace(/[^a-z\s']/g, ' ').trim().split(/\s+/).filter(Boolean)
+  // A bare thank-you / ok doesn't need the PM's attention.
+  const isAck = /^(ok(ay)?|k|thanks?|thank you|thx|ty|sounds good|great|perfect|cool|got it)$/.test(messageWords.join(' ')) || (!messageWords.length && messageBody.length <= 4)
   // Match a homeowner whether their phone was stored E.164 or bare 10-digit.
   const phoneCandidates = phoneMatchCandidates(fromPhone)
 
@@ -221,11 +225,16 @@ export async function POST(request: NextRequest) {
 
   // Pre-opt-in: handle consent flow — always respond regardless of quiet hours
   if (!homeowner.sms_confirmed) {
-    const isOptIn = ['yes', 'y', 'yep', 'yeah', 'sure', 'ok', 'okay'].includes(messageLower)
+    // Leading word, so "Yes!" and "yes please" count. Opt-outs were handled above.
+    // "ok"/"sure" only on their own ("ok who is this" is a question, not consent).
+    const words = messageWords.join(' ')
+    const isOptIn =
+      (['yes', 'y', 'yep', 'yeah', 'yea'].includes(messageWords[0] ?? '') && messageWords.length <= 4 && !messageBody.includes('?')) ||
+      ['sure', 'ok', 'okay', 'ok sure', 'sure thing'].includes(words)
     // Every real opt-out keyword is already handled above; what's left here is a
     // plain "no" to the invite, which only reads as a refusal before opt-in.
     // (After opt-in, "no" is a homeowner declining one proposed time slot.)
-    const isDecline = ['no', 'nope', 'no thanks', 'not interested'].includes(messageLower)
+    const isDecline = ['no', 'nope', 'no thanks', 'not interested', 'no thank you'].includes(words)
 
     if (isOptIn) {
       // A YES is the homeowner opting in themselves, so it clears monitor_only and
@@ -265,6 +274,14 @@ export async function POST(request: NextRequest) {
     } else {
       const pmFirst = (homeowner.profiles?.pm_name ?? 'your inspector').split(' ')[0]
       reply = `Hi! I'm Hailey, ${pmFirst}'s scheduling assistant. ${pmFirst} set you up for a free roof inspection if a storm comes through your area. Reply YES or STOP to opt out.`
+      // Anything else ("who is this?", a question) is a live homeowner the PM
+      // should hear about; before, only the auto-reply went out.
+      if (!isAck) await notifyRoofer(supabase, {
+        roofer_id: homeowner.roofer_id,
+        homeowner_id: homeowner.id,
+        pushTitle: `💬 ${homeowner.name} texted`,
+        message: `${homeowner.name} texted: "${messageBody.slice(0, 200)}". They haven't opted in yet. Call ${homeowner.phone}.`,
+      })
     }
 
     await sendSms(twilio, fromPhone, reply)
@@ -296,6 +313,13 @@ export async function POST(request: NextRequest) {
     .eq('direction', 'inbound')
     .gte('sent_at', hourAgo)
   if ((inboundCount ?? 0) >= 5) {
+    // Once, on the message that trips the throttle: the PM takes it from here.
+    if (inboundCount === 5) await notifyRoofer(supabase, {
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      pushTitle: `💬 ${homeowner.name} is texting`,
+      message: `${homeowner.name} has sent several texts in the last hour (latest: "${messageBody.slice(0, 200)}"). Call ${homeowner.phone}.`,
+    })
     const throttleMsg = `Got your message! ${pmFirst} will follow up with you soon.`
     await sendSms(twilio, fromPhone, throttleMsg)
     await supabase.from('sms_logs').insert({ roofer_id: homeowner.roofer_id, homeowner_id: homeowner.id, message: throttleMsg, direction: 'outbound', status: 'sent', message_type: 'reply' })
@@ -321,6 +345,13 @@ export async function POST(request: NextRequest) {
   // Already confirmed/declined/handed-off bookings are left untouched, so a stray
   // "thanks!" can never un-confirm a slot or re-trigger notifications.
   if (!pending || pending.status !== 'awaiting_ho_reply') {
+    // We tell them the PM will follow up, so the PM has to actually hear about it.
+    if (!isAck) await notifyRoofer(supabase, {
+      roofer_id: homeowner.roofer_id,
+      homeowner_id: homeowner.id,
+      pushTitle: `💬 ${homeowner.name} texted`,
+      message: `${homeowner.name} texted: "${messageBody.slice(0, 200)}". Call ${homeowner.phone}.`,
+    })
     await replyHo(`Got it, ${hoFirst}! ${pmFirst} will follow up with you.`)
     return new NextResponse('', { status: 200 })
   }
