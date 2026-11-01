@@ -5,14 +5,17 @@ export default async function NotificationsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const { data } = await supabase
-    .from('notifications')
-    .select('id, type, message, read, created_at, dismissed_at, homeowner_id, homeowners(name, phone, address)')
-    .eq('roofer_id', user!.id)
-    .order('created_at', { ascending: false })
-    .limit(100)
+  // Open and handled are loaded separately. One newest-100 query hid open leads
+  // once handled ones piled up (2026-11-01: two roofers had 114 and 132 open).
+  const cols = 'id, type, message, read, created_at, dismissed_at, homeowner_id, homeowners(name, phone, address)'
+  const [{ data: open }, { data: handled }] = await Promise.all([
+    supabase.from('notifications').select(cols).eq('roofer_id', user!.id).is('dismissed_at', null)
+      .order('created_at', { ascending: false }).limit(1000),
+    supabase.from('notifications').select(cols).eq('roofer_id', user!.id).not('dismissed_at', 'is', null)
+      .order('created_at', { ascending: false }).limit(100),
+  ])
 
-  const notifications = (data as unknown as Notification[]) ?? []
+  const notifications = [...(open ?? []), ...(handled ?? [])] as unknown as Notification[]
   const active = notifications.filter(n => !n.dismissed_at)
 
   return (

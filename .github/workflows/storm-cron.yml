@@ -3,7 +3,8 @@ name: Storm weather cron
 # BACKUP + ALARM. The real scheduler is the Vercel cron in vercel.json (every 10
 # min). GitHub ran this "hourly" job only every 4-7 hours in Sep-Oct 2026, which
 # is why storms were missed, so it is not trusted to schedule anything. It still
-# runs a check and fails loudly (GitHub emails) if any ZIP is blind.
+# runs a check and fails loudly (GitHub emails) if any ZIP is blind, or if the
+# Vercel check has not completed a run in 30 min (see Is the storm check alive?).
 # workflow_dispatch allows manual runs.
 on:
   schedule:
@@ -14,6 +15,25 @@ jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
+      # Runs first, before this job's own check can refresh the heartbeat: is the
+      # every-10-minute Vercel check actually completing? Fails (GitHub emails)
+      # when no run has finished in 30 min. Failure is recorded and reported at
+      # the end so the backup check below still runs.
+      - name: Is the storm check alive?
+        id: health
+        continue-on-error: true
+        run: |
+          code=$(curl -sS -o /tmp/health.txt -w '%{http_code}' \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://roofsip.vercel.app/api/cron/weather/health)
+          echo "HTTP $code"
+          cat /tmp/health.txt
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Storm check has NOT completed a run recently. Storms are not being watched."
+            exit 1
+          fi
+
       - name: Hit storm cron endpoint
         run: |
           code=$(curl -sS -o /tmp/out.txt -w '%{http_code}' \
@@ -22,6 +42,8 @@ jobs:
           echo "HTTP $code"
           cat /tmp/out.txt
           echo
+          # Non-200 now covers paused runs, failed dedup reads and auth errors,
+          # not just a crashed endpoint.
           test "$code" = "200"
 
           # A 200 is NOT proof the monitor is watching. If a ZIP can't be
@@ -32,3 +54,7 @@ jobs:
             echo "::error::Storm monitor is BLIND on $blind ZIP(s) — storms there cannot be detected."
             exit 1
           fi
+
+      - name: Fail if the health check failed
+        if: steps.health.outcome == 'failure'
+        run: exit 1

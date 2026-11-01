@@ -1,5 +1,5 @@
 import { createServiceClient } from '@/app/_lib/supabase/server'
-import { geocodeZip, scanStates, alertsAtPoint, WeatherAlert } from '@/app/_lib/noaa'
+import { geocodeZip, scanStates, alertsAtPoint, hailInches, WeatherAlert } from '@/app/_lib/noaa'
 import { getTwilioClient, buildWeatherSms, buildIntroSms, buildOutOfMarketSms, isMonthlySmsCapped } from '@/app/_lib/twilio'
 import { generateStormSms } from '@/app/_lib/ai-sms'
 import { isQuietHoursForZip } from '@/app/_lib/schedule'
@@ -80,14 +80,11 @@ async function notifiedTodaySet(
   return notified
 }
 
-function extractHailInches(text: string): number {
-  const m = text.match(/hail[^.]*?(\d+(?:\.\d+)?)\s*in(?:ch(?:es)?)?/i)
-  return m ? parseFloat(m[1]) : 0
-}
-
-// ≥ 0.25" (quarter-size) hail bypasses cooldown — roof-damaging threshold
+// Roof-damaging hail (>= 1", quarter size) may text again inside the 48h
+// cooldown. Until 2026-11-01 this could never fire (the hail reader matched 0
+// real warnings), so it is deliberately strict; see HAIL_RETEXT_GAP_MS.
 function isSevereHail(alert: WeatherAlert): boolean {
-  return extractHailInches(alert.description) >= 0.25 || extractHailInches(alert.headline) >= 0.25
+  return hailInches(alert) >= 1
 }
 
 function pickTemplate(templates: any[], stormType: string): string | null {
@@ -136,6 +133,9 @@ const MAX_STORM_ALERTS_PER_RUN = 50
 const MAX_INTRO_SMS_PER_RUN = 50
 // Longest an overnight storm text may wait for the homeowner's 8am (see storm_text_queue).
 const QUEUE_MAX_AGE_MS = 13 * 3600 * 1000
+// A second storm text needs severe hail AND this long since the last one, so the
+// next warning on the same storm cell 30 minutes later can't double-text.
+const HAIL_RETEXT_GAP_MS = 12 * 3600 * 1000
 
 export async function POST(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -485,14 +485,20 @@ export async function POST(request: NextRequest) {
   const sentAlertSet = new Set(sentAlert.rows.map((l: any) => `${l.homeowner_id}:${l.noaa_alert_id}`))
 
   // 48h cooldown — prevents multiple hits from the same lingering storm system.
-  // Severe hail (≥ 0.25") bypasses this so a genuinely damaging new storm still fires.
+  // Severe hail can re-text after HAIL_RETEXT_GAP_MS (see isSevereHail).
   const cutoff48h = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
   const recentAlert = await fetchInChunks(
     activeIds,
-    (chunk) => supabase.from('sms_logs').select('homeowner_id').in('homeowner_id', chunk).eq('direction', 'outbound').eq('message_type', 'storm_alert').gte('sent_at', cutoff48h),
+    (chunk) => supabase.from('sms_logs').select('homeowner_id, sent_at').in('homeowner_id', chunk).eq('direction', 'outbound').eq('message_type', 'storm_alert').gte('sent_at', cutoff48h),
   )
   if (!recentAlert.ok) return NextResponse.json({ skipped: true, reason: 'storm_dedup_read_failed' })
   const sentLast48hSet = new Set(recentAlert.rows.map((l: any) => l.homeowner_id))
+  // Latest storm text per homeowner, for the severe-hail re-text gap.
+  const lastStormTextAt = new Map<string, number>()
+  for (const l of recentAlert.rows as any[]) {
+    const t = Date.parse(l.sent_at)
+    if (!(t <= (lastStormTextAt.get(l.homeowner_id) ?? 0))) lastStormTextAt.set(l.homeowner_id, t)
+  }
 
   // Don't re-pitch (and clobber the booking of) anyone who already has a future
   // confirmed inspection — the reserve upsert below keys on homeowner_id and would
@@ -535,6 +541,11 @@ export async function POST(request: NextRequest) {
   const sentLast48hPhones = new Set(
     [...sentLast48hSet].map(id => hoById.get(id)?.phone).filter(Boolean)
   )
+  const lastStormTextAtPhone = new Map<string, number>()
+  for (const [id, t] of lastStormTextAt) {
+    const phone = hoById.get(id)?.phone
+    if (phone && t > (lastStormTextAtPhone.get(phone) ?? 0)) lastStormTextAtPhone.set(phone, t)
+  }
 
   const templateCache: Record<string, any[]> = {}
   const stormAlertedThisRun = new Set<string>()
@@ -570,15 +581,21 @@ export async function POST(request: NextRequest) {
     if (!quiet && queued) consumedQueue.push(homeowner.id)
     if (!alerts.length) continue
 
-    // 48h cooldown — bypass only for severe hail (≥ 0.25") on a fresh alert
-    const inCooldown = sentLast48hSet.has(homeowner.id) || sentLast48hPhones.has(homeowner.phone)
-    if (inCooldown && !alerts.some(isSevereHail)) continue
-
     const alert = alerts[0]
     const alertId = alert.id || null
 
     // Also dedupe on specific NOAA alert ID (handles same alert recurring in feed)
     if (alertId && sentAlertSet.has(`${homeowner.id}:${alertId}`)) continue
+
+    // 48h cooldown: one storm text per lingering storm system. It holds back the
+    // TEXT only; a new storm inside the window still reaches the PM as a lead.
+    const inCooldown = sentLast48hSet.has(homeowner.id) || sentLast48hPhones.has(homeowner.phone)
+    const lastText = Math.max(lastStormTextAt.get(homeowner.id) ?? 0, lastStormTextAtPhone.get(homeowner.phone) ?? 0)
+    const hailRetext = alerts.some(isSevereHail) && Date.now() - lastText >= HAIL_RETEXT_GAP_MS
+    if (inCooldown && !hailRetext) {
+      await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area again (${homeowner.address}). They already got a storm text in the last 2 days, so no new text went out. Call ${homeowner.phone} to follow up.`)
+      continue
+    }
 
     // Reasons we can't text right now. None of them may drop the storm: the PM
     // gets the lead instead.
@@ -748,10 +765,19 @@ export async function POST(request: NextRequest) {
         noaa_alert_id: alertId,
       })
 
+      // The PM sees every storm hit, not only the ones the homeowner answers.
+      // Before 2026-11-01 a timed offer made no lead at all, so an unanswered or
+      // carrier-filtered text left the PM blind until the 48h follow-up.
+      // (Out-of-market already notified above; a queued storm notified overnight.)
+      if (proposedSlot && !fromQueue) {
+        await leadOnce(homeowner, `Storm hit ${homeowner.name}'s area (${homeowner.address}). We texted them an inspection offer for ${formatSlot(proposedSlot, rooferTz)}; you'll get an alert when they reply. Call: ${homeowner.phone}`, '⛈️ Storm lead')
+      }
+
       // Timed offers reserve their slot above. Out-of-market leads create no
       // booking row — they live as a hot lead in the PM's call list instead.
       stormAlertedThisRun.add(homeowner.id)
       sentLast48hPhones.add(homeowner.phone)
+      lastStormTextAtPhone.set(homeowner.phone, Date.now())
       await bumpSmsCount(supabase, profile.id, profile.sms_cap ?? 1000, profile.company_name ?? profile.pm_name ?? 'Account')
       totalSent++
     } catch (err) {
@@ -817,6 +843,12 @@ export async function POST(request: NextRequest) {
     const { error: consumeErr } = await supabase.from('storm_text_queue').delete().in('homeowner_id', consumedQueue)
     if (consumeErr) console.error('[weather] could not clear sent overnight texts from storm_text_queue:', consumeErr)
   }
+
+  // Heartbeat: a run that got all the way through. The health check
+  // (/api/cron/weather/health) alarms when this goes stale, so a cron that stops
+  // firing, or runs that keep dying partway, can't look like clear skies.
+  const { error: beatErr } = await supabase.from('rate_limit_events').insert({ action: 'cron_weather_done' })
+  if (beatErr) console.error('[weather] heartbeat write failed:', beatErr)
 
   // Report blind ZIPs in the payload, not just the logs — the GitHub Actions
   // scheduler asserts on this, so a geocoder outage fails the run visibly
