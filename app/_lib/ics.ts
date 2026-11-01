@@ -11,6 +11,33 @@ function toIcsUtc(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 }
 
+// One-tap Google Calendar link: opens a prefilled "new event" page in the PM's
+// Google Calendar (web or app). .ics covers Apple/Outlook; Google treats an .ics
+// link as a file download, so it gets its own button.
+export function googleCalendarUrl({
+  startISO,
+  homeownerName,
+  homeownerAddress,
+  homeownerPhone,
+}: {
+  startISO: string
+  homeownerName: string
+  homeownerAddress: string
+  homeownerPhone: string
+}): string | null {
+  const start = new Date(startISO)
+  if (isNaN(start.getTime())) return null
+  const end = new Date(start.getTime() + 60 * 60 * 1000) // same 1-hour slot as the .ics
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Roof inspection — ${homeownerName}`,
+    dates: `${toIcsUtc(start)}/${toIcsUtc(end)}`,
+    location: homeownerAddress,
+    details: `Free roof inspection for ${homeownerName}. Phone: ${homeownerPhone}. Booked via RoofSIP.`,
+  })
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
 // Builds a PUBLISH-method VEVENT (a plain "add to my calendar" item, not an RSVP invite).
 // Returns null if startISO isn't a valid date.
 export function buildInspectionIcs({
